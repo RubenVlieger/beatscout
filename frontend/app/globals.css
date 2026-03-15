@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 15% 9%;
+    --foreground: 0 0% 88%;
+    --card: 216 12% 12%;
+    --card-foreground: 0 0% 88%;
+    --popover: 216 12% 12%;
+    --popover-foreground: 0 0% 88%;
+    --primary: 147 80% 67%;
+    --primary-foreground: 220 15% 9%;
+    --secondary: 216 12% 17%;
+    --secondary-foreground: 0 0% 88%;
+    --muted: 216 12% 17%;
+    --muted-foreground: 215 14% 58%;
+    --accent: 147 80% 67%;
+    --accent-foreground: 220 15% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 216 12% 17%;
+    --input: 216 12% 17%;
+    --ring: 147 80% 67%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-beatscout-bg text-beatscout-text;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #141619;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2D3238;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3d4248;
+}
+
+/* Three.js canvas styling */
+canvas {
+  display: block;
+}

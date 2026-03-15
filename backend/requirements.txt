@@ -1,0 +1,26 @@
+# BeatScout Backend
+# FastAPI with PostgreSQL, JWT auth, and SoundCloud OAuth
+
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+alembic==1.12.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+httpx==0.25.2
+python-multipart==0.0.6
+slowapi==0.1.9
+redis==5.0.1
+python-dotenv==1.0.0
+email-validator==2.1.0
+
+# Analysis dependencies (shared with existing code)
+numpy==1.23.5
+librosa==0.10.1
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+laion-clap==1.1.4
+psycopg2-binary==2.9.9
