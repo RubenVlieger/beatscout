@@ -23,20 +23,65 @@ interface NodeData {
   data: SongData
 }
 
-// Camera controller that smoothly focuses on selected node
+// Calculate Euclidean distance between two 3D points
+function getDistance(p1: [number, number, number], p2: [number, number, number]): number {
+  const dx = p1[0] - p2[0]
+  const dy = p1[1] - p2[1]
+  const dz = p1[2] - p2[2]
+  return Math.sqrt(dx * dx + dy * dy + dz * dz)
+}
+
+// Camera controller that smoothly focuses on selected node and handles orbit mode
 function CameraController({
   targetPosition,
-  isFocusing
+  isFocusing,
+  orbitMode,
+  centerNode
 }: {
   targetPosition: THREE.Vector3 | null
   isFocusing: boolean
+  orbitMode: boolean
+  centerNode: SongData | null
 }) {
   const controlsRef = useRef<CameraControls>(null)
   const { camera } = useThree()
+  const initialPosition = useRef(new THREE.Vector3(60, 60, 60))
+  
+  // Track if we need to animate camera
+  const lastOrbitMode = useRef(orbitMode)
+  const lastCenterNode = useRef<SongData | null>(null)
   
   useEffect(() => {
-    if (targetPosition && controlsRef.current && isFocusing) {
-      // Smoothly move camera to frame the selected node and its cluster
+    if (!controlsRef.current) return
+    
+    // Check if orbit mode or center node changed
+    const orbitChanged = lastOrbitMode.current !== orbitMode
+    const centerChanged = lastCenterNode.current?.id !== centerNode?.id
+    
+    if (orbitMode && centerNode && (orbitChanged || centerChanged)) {
+      // Entering orbit mode or switching center - animate to top-down view
+      const centerX = ((centerNode.tempo - 120) / 25) * 100 - 50
+      const centerY = centerNode.danceability - 50
+      const centerZ = centerNode.temperament - 50
+      
+      // Camera positioned above looking down
+      const newPosition = new THREE.Vector3(centerX, centerY, centerZ + 40)
+      const lookAt = new THREE.Vector3(centerX, centerY, centerZ)
+      
+      controlsRef.current.setLookAt(
+        newPosition.x, newPosition.y, newPosition.z,
+        lookAt.x, lookAt.y, lookAt.z,
+        true // enable transition
+      )
+    } else if (!orbitMode && orbitChanged) {
+      // Exiting orbit mode - return to default isometric view
+      controlsRef.current.setLookAt(
+        initialPosition.current.x, initialPosition.current.y, initialPosition.current.z,
+        0, 0, 0,
+        true // enable transition
+      )
+    } else if (targetPosition && isFocusing && !orbitMode) {
+      // Normal focus mode (single click)
       const offset = new THREE.Vector3(20, 15, 20)
       const newPosition = targetPosition.clone().add(offset)
       
@@ -46,7 +91,10 @@ function CameraController({
         true // enable transition
       )
     }
-  }, [targetPosition, isFocusing])
+    
+    lastOrbitMode.current = orbitMode
+    lastCenterNode.current = centerNode
+  }, [targetPosition, isFocusing, orbitMode, centerNode])
   
   return (
     <CameraControls
@@ -70,6 +118,11 @@ function NeuralWeb({
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [isTransitioning, setIsTransitioning] = useState(false)
+  
+  // Orbit mode state
+  const [orbitMode, setOrbitMode] = useState(false)
+  const [centerNode, setCenterNode] = useState<SongData | null>(null)
+  const [orbitingNeighbors, setOrbitingNeighbors] = useState<SongData[]>([])
   
   // Process nodes with positions and colors
   const nodes = useMemo<NodeData[]>(() => {
@@ -111,11 +164,7 @@ function NeuralWeb({
     
     nodes.forEach(node => {
       if (node.id !== hoveredNodeId) {
-        const distance = Math.sqrt(
-          Math.pow(node.position[0] - hoveredNode.position[0], 2) +
-          Math.pow(node.position[1] - hoveredNode.position[1], 2) +
-          Math.pow(node.position[2] - hoveredNode.position[2], 2)
-        )
+        const distance = getDistance(node.position, hoveredNode.position)
         // Consider nodes within 30 units as connected
         if (distance < 30) {
           connectedIds.add(node.id)
@@ -127,12 +176,63 @@ function NeuralWeb({
     return new Set(nodes.filter(n => !connectedIds.has(n.id)).map(n => n.id))
   }, [hoveredNodeId, nodes])
   
+  // Calculate orbit positions for neighbors
+  const orbitPositions = useMemo(() => {
+    if (!orbitMode || !centerNode || orbitingNeighbors.length === 0) {
+      return new Map<string, [number, number, number]>()
+    }
+    
+    const centerX = ((centerNode.tempo - 120) / 25) * 100 - 50
+    const centerY = centerNode.danceability - 50
+    const centerZ = centerNode.temperament - 50
+    const radius = 15
+    
+    // Calculate angles based on relative danceability and temperament
+    const neighborsWithAngles = orbitingNeighbors.map(neighbor => {
+      const deltaDance = neighbor.danceability - centerNode.danceability
+      const deltaTemp = neighbor.temperament - centerNode.temperament
+      const angle = Math.atan2(deltaTemp, deltaDance)
+      return { neighbor, angle }
+    })
+    
+    // Sort by angle
+    const sorted = neighborsWithAngles.sort((a, b) => a.angle - b.angle)
+    
+    // Assign evenly spaced angles
+    const positions = new Map<string, [number, number, number]>()
+    sorted.forEach((item, i) => {
+      const newAngle = i * (2 * Math.PI / orbitingNeighbors.length)
+      const targetX = centerX + radius * Math.cos(newAngle)
+      const targetY = centerY + radius * Math.sin(newAngle)
+      const targetZ = centerZ
+      positions.set(item.neighbor.id, [targetX, targetY, targetZ])
+    })
+    
+    return positions
+  }, [orbitMode, centerNode, orbitingNeighbors])
+  
   // Get target position for camera focus
   const targetPosition = useMemo(() => {
     if (!selectedNodeId) return null
     const node = nodes.find(n => n.id === selectedNodeId)
     return node ? new THREE.Vector3(...node.position) : null
   }, [selectedNodeId, nodes])
+  
+  // Find nearest neighbors for orbit mode
+  const findNearestNeighbors = useCallback((centerNodeData: SongData, count: number = 9): SongData[] => {
+    const centerNodeWithPosition = nodes.find(n => n.data.id === centerNodeData.id)
+    if (!centerNodeWithPosition) return []
+    
+    const distances = nodes
+      .filter(n => n.data.id !== centerNodeData.id)
+      .map(n => ({
+        data: n.data,
+        distance: getDistance(centerNodeWithPosition.position, n.position)
+      }))
+      .sort((a, b) => a.distance - b.distance)
+    
+    return distances.slice(0, count).map(d => d.data)
+  }, [nodes])
   
   const handleNodeClick = useCallback((node: NodeData) => {
     // Toggle selection - if clicking same node, deselect it
@@ -146,6 +246,31 @@ function NeuralWeb({
     // Quick transition - no delay
     setIsTransitioning(false)
   }, [selectedNodeId, onPointClick])
+  
+  const handleNodeDoubleClick = useCallback((node: NodeData) => {
+    if (!orbitMode) {
+      // Entering orbit mode
+      setCenterNode(node.data)
+      setOrbitingNeighbors(findNearestNeighbors(node.data, 9))
+      setOrbitMode(true)
+      // Also select the node
+      setSelectedNodeId(node.id)
+      onPointClick(node.data)
+    } else if (centerNode?.id === node.data.id) {
+      // Exiting orbit mode (double-clicked center)
+      setOrbitMode(false)
+      setCenterNode(null)
+      setOrbitingNeighbors([])
+      setSelectedNodeId(null)
+      onPointClick(null)
+    } else if (orbitingNeighbors.some(n => n.id === node.data.id)) {
+      // Switching to new center (clicked an orbiting node)
+      setCenterNode(node.data)
+      setOrbitingNeighbors(findNearestNeighbors(node.data, 9))
+      setSelectedNodeId(node.id)
+      onPointClick(node.data)
+    }
+  }, [orbitMode, centerNode, orbitingNeighbors, findNearestNeighbors, onPointClick])
   
   const handleNodeHover = useCallback((nodeId: string) => {
     setHoveredNodeId(nodeId)
@@ -191,30 +316,49 @@ function NeuralWeb({
         hoveredNodeId={hoveredNodeId}
         dimmedNodeIds={dimmedNodeIds}
         anchorId={anchorSongId}
+        orbitMode={orbitMode}
+        centerNode={centerNode}
+        orbitingNeighbors={orbitingNeighbors}
+        orbitPositions={orbitPositions}
       />
       
       {/* Neural orbs (nodes) */}
-      {nodes.map((node, index) => (
-        <NeuralOrb
-          key={node.id}
-          position={node.position}
-          color={node.color}
-          data={node.data}
-          isAnchor={node.id === anchorSongId}
-          isHovered={hoveredNodeId === node.id}
-          isDimmed={dimmedNodeIds.has(node.id)}
-          isSelected={selectedNodeId === node.id}
-          onClick={() => handleNodeClick(node)}
-          onHover={() => handleNodeHover(node.id)}
-          onLeave={handleNodeLeave}
-          index={index}
-        />
-      ))}
+      {nodes.map((node, index) => {
+        const isCenter = centerNode?.id === node.id
+        const isOrbiting = orbitingNeighbors.some(n => n.id === node.id)
+        const shouldHide = orbitMode && !isCenter && !isOrbiting
+        const orbitPosition = isOrbiting ? orbitPositions.get(node.id) || null : null
+        
+        return (
+          <NeuralOrb
+            key={node.id}
+            position={node.position}
+            color={node.color}
+            data={node.data}
+            isAnchor={node.id === anchorSongId}
+            isHovered={hoveredNodeId === node.id}
+            isDimmed={dimmedNodeIds.has(node.id)}
+            isSelected={selectedNodeId === node.id}
+            onClick={() => handleNodeClick(node)}
+            onDoubleClick={() => handleNodeDoubleClick(node)}
+            onHover={() => handleNodeHover(node.id)}
+            onLeave={handleNodeLeave}
+            index={index}
+            orbitMode={orbitMode}
+            isCenter={isCenter}
+            isOrbiting={isOrbiting}
+            shouldHide={shouldHide}
+            orbitPosition={orbitPosition}
+          />
+        )
+      })}
       
       {/* Camera controller */}
       <CameraController 
         targetPosition={targetPosition} 
         isFocusing={isTransitioning}
+        orbitMode={orbitMode}
+        centerNode={centerNode}
       />
       
       {/* Bloom post-processing */}

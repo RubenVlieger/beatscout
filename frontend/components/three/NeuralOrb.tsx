@@ -5,6 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { Play } from 'lucide-react'
+import { damp3 } from '@/lib/easing'
 
 // Types for song data
 interface SongData {
@@ -30,9 +31,15 @@ interface NeuralOrbProps {
   isDimmed: boolean
   isSelected: boolean
   onClick: () => void
+  onDoubleClick: () => void
   onHover: () => void
   onLeave: () => void
   index: number
+  orbitMode: boolean
+  isCenter: boolean
+  isOrbiting: boolean
+  shouldHide: boolean
+  orbitPosition: [number, number, number] | null
 }
 
 export function NeuralOrb({
@@ -44,13 +51,26 @@ export function NeuralOrb({
   isDimmed,
   isSelected,
   onClick,
+  onDoubleClick,
   onHover,
   onLeave,
-  index
+  index,
+  orbitMode,
+  isCenter,
+  isOrbiting,
+  shouldHide,
+  orbitPosition
 }: NeuralOrbProps) {
   const meshRef = useRef<THREE.Mesh>(null)
+  const hitMeshRef = useRef<THREE.Mesh>(null)
   const ringRef = useRef<THREE.Mesh>(null)
+  const groupRef = useRef<THREE.Group>(null)
   const [internalHovered, setInternalHovered] = useState(false)
+  
+  // Track current animated position for orbit mode
+  const currentPosition = useRef(new THREE.Vector3(...position))
+  // Track current scale for smooth transitions
+  const currentScale = useRef(new THREE.Vector3(1, 1, 1))
   
   const actuallyHovered = isHovered || internalHovered
   
@@ -59,31 +79,84 @@ export function NeuralOrb({
     const baseIntensity = 0.3
     const qualityBoost = (data.production_quality / 100) * 1.2
     const selectionBoost = isSelected ? 0.5 : 0
-    return baseIntensity + qualityBoost + selectionBoost
-  }, [data.production_quality, isSelected])
+    const centerBoost = isCenter ? 0.8 : 0
+    return baseIntensity + qualityBoost + selectionBoost + centerBoost
+  }, [data.production_quality, isSelected, isCenter])
   
-  // Calculate scale based on hover and selection state
-  const targetScale = isAnchor ? 1.2 : 1.0
-  const hoverScale = actuallyHovered ? 1.8 : 1.0
-  const selectionScale = isSelected ? 1.5 : 1.0
-  const dimmedScale = isDimmed ? 0.7 : 1.0
+  // Calculate target scale based on state
+  const targetScale = useMemo(() => {
+    if (shouldHide) return new THREE.Vector3(0, 0, 0)
+    
+    const baseScale = isAnchor ? 1.2 : 1.0
+    const hoverScale = actuallyHovered ? 1.8 : 1.0
+    const selectionScale = isSelected ? 1.5 : 1.0
+    const centerScale = isCenter ? 2.0 : 1.0
+    const orbitingScale = isOrbiting ? 1.2 : 1.0
+    const dimmedScale = isDimmed ? 0.7 : 1.0
+    const defaultScale = isAnchor ? 1.5 : 0.8
+    
+    const finalScale = baseScale * hoverScale * selectionScale * centerScale * orbitingScale * dimmedScale * defaultScale
+    return new THREE.Vector3(finalScale, finalScale, finalScale)
+  }, [isAnchor, actuallyHovered, isSelected, isCenter, isOrbiting, shouldHide, isDimmed])
   
-  useFrame((state) => {
-    if (!meshRef.current) return
+  // Calculate target opacity
+  const targetOpacity = useMemo(() => {
+    if (shouldHide) return 0
+    return isDimmed ? 0.3 : 1.0
+  }, [shouldHide, isDimmed])
+  
+  useFrame((state, delta) => {
+    if (!meshRef.current || !groupRef.current) return
     
     const time = state.clock.elapsedTime
     
     // Breathing animation - subtle Y offset based on time and index
-    // Only apply breathOffset (not position[1] again since mesh is inside group with position)
     const breathOffset = Math.sin(time * 0.5 + index * 0.2) * 0.5
-    meshRef.current.position.y = breathOffset
     
-    // Smooth scale interpolation
-    const finalScale = (targetScale * hoverScale * selectionScale * dimmedScale) * (isAnchor ? 1.5 : 0.8)
-    meshRef.current.scale.lerp(
-      new THREE.Vector3(finalScale, finalScale, finalScale),
-      0.1
-    )
+    // Handle position animation for orbit mode
+    if (orbitMode && orbitPosition) {
+      const targetPos = isCenter 
+        ? position
+        : orbitPosition
+      
+      const targetWithBreath: [number, number, number] = [
+        targetPos[0],
+        targetPos[1] + breathOffset,
+        targetPos[2]
+      ]
+      
+      damp3(currentPosition.current, targetWithBreath, 0.15, delta)
+      groupRef.current.position.copy(currentPosition.current)
+    } else if (orbitMode && isCenter) {
+      const targetWithBreath: [number, number, number] = [
+        position[0],
+        position[1] + breathOffset,
+        position[2]
+      ]
+      
+      damp3(currentPosition.current, targetWithBreath, 0.15, delta)
+      groupRef.current.position.copy(currentPosition.current)
+    } else {
+      // Normal mode - return to original position with breathing
+      const targetWithBreath: [number, number, number] = [
+        position[0],
+        position[1] + breathOffset,
+        position[2]
+      ]
+      
+      damp3(currentPosition.current, targetWithBreath, 0.15, delta)
+      groupRef.current.position.copy(currentPosition.current)
+    }
+    
+    // Smooth scale interpolation using lerp
+    currentScale.current.lerp(targetScale, 0.1)
+    meshRef.current.scale.copy(currentScale.current)
+    
+    // Update material opacity
+    if (meshRef.current.material) {
+      const material = meshRef.current.material as THREE.MeshStandardMaterial
+      material.opacity = THREE.MathUtils.lerp(material.opacity || 1, targetOpacity, 0.1)
+    }
     
     // Rotate anchor ring
     if (ringRef.current && isAnchor) {
@@ -107,15 +180,27 @@ export function NeuralOrb({
     onClick()
   }
   
+  const handleDoubleClick = (e: any) => {
+    e.stopPropagation()
+    onDoubleClick()
+  }
+  
   return (
-    <group position={position}>
-      {/* Main Orb */}
+    <group ref={groupRef} position={position}>
+      {/* Invisible Hit Sphere - 1.7x larger for easier interaction */}
       <mesh
-        ref={meshRef}
+        ref={hitMeshRef}
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
       >
+        <sphereGeometry args={[1.7, 16, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      
+      {/* Main Orb - visual only, no interaction handlers */}
+      <mesh ref={meshRef}>
         <sphereGeometry args={[1, 32, 32]} />
         <meshStandardMaterial
           color={color}
@@ -124,12 +209,12 @@ export function NeuralOrb({
           roughness={0.2}
           metalness={0.8}
           transparent
-          opacity={isDimmed ? 0.3 : 1.0}
+          opacity={targetOpacity}
         />
       </mesh>
       
       {/* Anchor Ring Effect */}
-      {isAnchor && (
+      {isAnchor && !shouldHide && (
         <mesh ref={ringRef}>
           <torusGeometry args={[2.5, 0.05, 16, 100]} />
           <meshStandardMaterial
@@ -142,8 +227,22 @@ export function NeuralOrb({
         </mesh>
       )}
       
+      {/* Center Node Indicator Ring */}
+      {isCenter && !shouldHide && (
+        <mesh>
+          <torusGeometry args={[3, 0.1, 16, 100]} />
+          <meshStandardMaterial
+            color="#F97316"
+            emissive="#F97316"
+            emissiveIntensity={1.5}
+            transparent
+            opacity={0.8}
+          />
+        </mesh>
+      )}
+      
       {/* Tooltip */}
-      {(actuallyHovered || isHovered) && (
+      {(actuallyHovered || isHovered) && !shouldHide && (
         <Html distanceFactor={20}>
           <div 
             className="bg-[#1C2024]/95 backdrop-blur-md border border-[#2D3238] px-8 py-6 rounded-xl shadow-2xl pointer-events-none min-w-[600px]"

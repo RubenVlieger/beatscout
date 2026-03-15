@@ -16,6 +16,10 @@ interface NeuralFilamentsProps {
   hoveredNodeId: string | null
   dimmedNodeIds: Set<string>
   anchorId: string
+  orbitMode: boolean
+  centerNode: SongData | null
+  orbitingNeighbors: SongData[]
+  orbitPositions: Map<string, [number, number, number]>
 }
 
 // Calculate Euclidean distance between two 3D points
@@ -49,15 +53,65 @@ interface Connection {
   color: THREE.Color
   isHighlighted: boolean
   isDimmed: boolean
+  isOrbitConnection?: boolean
 }
 
 export function NeuralFilaments({
   nodes,
   hoveredNodeId,
   dimmedNodeIds,
-  anchorId
+  anchorId,
+  orbitMode,
+  centerNode,
+  orbitingNeighbors,
+  orbitPositions
 }: NeuralFilamentsProps) {
+  // Calculate connections based on mode
   const connections = useMemo(() => {
+    // If in orbit mode, render hub-and-spoke connections
+    if (orbitMode && centerNode) {
+      const result: Connection[] = []
+      const centerNodeData = nodes.find(n => n.data.id === centerNode.id)
+      
+      if (!centerNodeData) return result
+      
+      // Get center position (original or animated based on orbit)
+      const centerX = ((centerNode.tempo - 120) / 25) * 100 - 50
+      const centerY = centerNode.danceability - 50
+      const centerZ = centerNode.temperament - 50
+      const centerPosition: [number, number, number] = [centerX, centerY, centerZ]
+      
+      // Create connections from center to each orbiting neighbor
+      orbitingNeighbors.forEach(neighbor => {
+        const neighborNode = nodes.find(n => n.data.id === neighbor.id)
+        if (!neighborNode) return
+        
+        // Use orbit position if available, otherwise use original position
+        const neighborPosition = orbitPositions.get(neighbor.id) || neighborNode.position
+        
+        // Color based on production quality
+        const quality = neighbor.production_quality / 100
+        const lineColor = new THREE.Color().lerpColors(
+          new THREE.Color('#1E3A8A'),
+          new THREE.Color('#F97316'),
+          quality
+        )
+        
+        // Hub and spoke connections are always highlighted
+        result.push({
+          from: { position: centerPosition, data: centerNode },
+          to: { position: neighborPosition, data: neighbor },
+          color: lineColor,
+          isHighlighted: true,
+          isDimmed: false,
+          isOrbitConnection: true
+        })
+      })
+      
+      return result
+    }
+    
+    // Normal mode: neural web connections
     const result: Connection[] = []
     const processedPairs = new Set<string>()
     
@@ -112,7 +166,7 @@ export function NeuralFilaments({
     })
     
     return result
-  }, [nodes, hoveredNodeId, dimmedNodeIds])
+  }, [nodes, hoveredNodeId, dimmedNodeIds, orbitMode, centerNode, orbitingNeighbors, orbitPositions])
   
   return (
     <group>
@@ -120,6 +174,7 @@ export function NeuralFilaments({
         <FilamentLine 
           key={`${connection.from.data.id}-${connection.to.data.id}-${index}`}
           connection={connection}
+          orbitMode={orbitMode}
         />
       ))}
     </group>
@@ -127,21 +182,27 @@ export function NeuralFilaments({
 }
 
 // Individual filament component with animation
-function FilamentLine({ connection }: { connection: Connection }) {
+function FilamentLine({ connection, orbitMode }: { connection: Connection; orbitMode: boolean }) {
   const lineRef = useRef<any>(null)
   
   // Calculate opacity based on state
-  const targetOpacity = connection.isHighlighted 
-    ? 0.8 
-    : connection.isDimmed 
-      ? 0.05 
-      : 0.15
+  const targetOpacity = orbitMode
+    ? 0.8 // Orbit mode connections are always bright
+    : connection.isHighlighted 
+      ? 0.8 
+      : connection.isDimmed 
+        ? 0.05 
+        : 0.15
   
-  const targetLineWidth = connection.isHighlighted ? 3 : 1
+  const targetLineWidth = orbitMode
+    ? 2 // Orbit mode uses consistent width
+    : connection.isHighlighted 
+      ? 3 
+      : 1
   
   useFrame(() => {
     if (lineRef.current) {
-      // Smoothly interpolate line width for highlighted connections
+      // Smoothly interpolate line width
       lineRef.current.material.linewidth = THREE.MathUtils.lerp(
         lineRef.current.material.linewidth || 1,
         targetLineWidth,
