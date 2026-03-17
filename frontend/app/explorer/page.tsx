@@ -1,79 +1,146 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { useState, useEffect, useMemo, Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import Sidebar from '@/components/layout/Sidebar'
 import { Check, ChevronDown, Play, Download, Filter, Loader2, Search, MousePointer2, Move3d } from 'lucide-react'
 import Link from 'next/link'
 import { explorerApi } from '@/lib/api'
-import { NeuralScene, type SongData } from '@/components/three/NeuralScene'
-import * as THREE from 'three'
+import * as Slider from '@radix-ui/react-slider'
 
-// FilterSlider component with proper dual handle functionality
+// Dynamic imports for Three.js components
+const Canvas = dynamic(
+  () => import('@react-three/fiber').then(mod => ({ default: mod.Canvas })),
+  { ssr: false }
+)
+
+const NeuralScene = dynamic(
+  () => import('@/components/three/NeuralScene').then(mod => ({ default: mod.NeuralScene })),
+  { ssr: false }
+)
+
+// Type for SongData (re-exported from NeuralScene for type safety)
+type SongData = {
+  id: string
+  title: string
+  artist: string
+  filename: string
+  tempo: number
+  danceability: number
+  temperament: number
+  production_quality: number
+  genre: string
+  key: string
+  url: string
+}
+
+// Canvas Skeleton component for loading state
+function CanvasSkeleton() {
+  return (
+    <div className="relative h-[500px] bg-[#141619] rounded-xl flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-beatscout-mint border-t-transparent rounded-full animate-spin" />
+        <span className="text-beatscout-text-secondary text-sm">Loading visualization...</span>
+      </div>
+    </div>
+  )
+}
+
+// Unified loading skeleton for the entire page
+function PageSkeleton() {
+  return (
+    <div className="flex min-h-screen bg-beatscout-bg">
+      <Sidebar isLoggedIn={false} />
+      <main className="flex-1 ml-64 p-8">
+        {/* Header skeleton */}
+        <header className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-8 w-96 bg-beatscout-panel rounded animate-pulse" />
+            <div className="h-8 w-24 bg-beatscout-panel rounded-full animate-pulse" />
+          </div>
+          <div className="h-8 w-96 bg-beatscout-panel rounded-full animate-pulse" />
+        </header>
+
+        {/* Main content skeleton */}
+        <div className="grid grid-cols-[1fr_300px] gap-6">
+          {/* Neural Web skeleton */}
+          <div className="bg-beatscout-panel border border-beatscout-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-beatscout-border">
+              <div className="h-5 w-24 bg-beatscout-bg rounded animate-pulse" />
+              <div className="h-5 w-32 bg-beatscout-bg rounded animate-pulse" />
+            </div>
+            <CanvasSkeleton />
+          </div>
+
+          {/* Filters skeleton */}
+          <div className="bg-beatscout-panel border border-beatscout-border rounded-xl p-6 space-y-6">
+            <div className="h-5 w-20 bg-beatscout-bg rounded animate-pulse" />
+            <div className="space-y-4">
+              <div className="h-8 w-full bg-beatscout-bg rounded animate-pulse" />
+              <div className="h-2 w-full bg-beatscout-bg rounded animate-pulse" />
+              <div className="h-2 w-full bg-beatscout-bg rounded animate-pulse" />
+              <div className="h-2 w-full bg-beatscout-bg rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+
+        {/* Table skeleton */}
+        <div className="mt-6 bg-beatscout-panel border border-beatscout-border rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-beatscout-border">
+            <div className="h-6 w-48 bg-beatscout-bg rounded animate-pulse" />
+          </div>
+          <div className="divide-y divide-beatscout-border">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="px-6 py-4 flex items-center gap-4">
+                <div className="h-4 w-48 bg-beatscout-bg rounded animate-pulse" />
+                <div className="h-4 w-20 bg-beatscout-bg rounded animate-pulse" />
+                <div className="h-4 w-16 bg-beatscout-bg rounded animate-pulse" />
+                <div className="h-4 w-16 bg-beatscout-bg rounded animate-pulse" />
+                <div className="h-4 w-24 bg-beatscout-bg rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// FilterSlider component using Radix UI for proper dual-thumb support
 function FilterSlider({ label, min, max, value, onChange }: { label: string, min: number, max: number, value: [number, number], onChange: (val: [number, number]) => void }) {
-  const [localValue, setLocalValue] = useState<[number, number]>(value)
-  
-  useEffect(() => {
-    setLocalValue(value)
-  }, [value])
-
-  const handleMinChange = (newMin: number) => {
-    const clampedMin = Math.min(newMin, localValue[1])
-    setLocalValue([clampedMin, localValue[1]])
-    onChange([clampedMin, localValue[1]])
+  const handleValueChange = (newValue: number[]) => {
+    if (newValue.length === 2) {
+      onChange([newValue[0], newValue[1]] as [number, number])
+    }
   }
-
-  const handleMaxChange = (newMax: number) => {
-    const clampedMax = Math.max(newMax, localValue[0])
-    setLocalValue([localValue[0], clampedMax])
-    onChange([localValue[0], clampedMax])
-  }
-
-  const minPercent = ((localValue[0] - min) / (max - min)) * 100
-  const maxPercent = ((localValue[1] - min) / (max - min)) * 100
 
   return (
     <div className="mb-6">
       <div className="flex justify-between text-sm mb-2">
         <span className="text-beatscout-text-secondary">{label}</span>
-        <span className="text-white">{localValue[0]} - {localValue[1]}</span>
+        <span className="text-white">{value[0]} - {value[1]}</span>
       </div>
-      <div className="relative h-8 flex items-center">
-        <div className="absolute w-full h-2 bg-beatscout-border rounded-full" />
-        <div 
-          className="absolute h-2 bg-beatscout-mint rounded-full"
-          style={{ 
-            left: `${minPercent}%`,
-            width: `${maxPercent - minPercent}%`
-          }}
+      <Slider.Root
+        className="relative flex items-center select-none touch-none w-full h-5"
+        value={value}
+        max={max}
+        min={min}
+        step={1}
+        minStepsBetweenThumbs={1}
+        onValueChange={handleValueChange}
+      >
+        <Slider.Track className="bg-beatscout-border relative grow rounded-full h-[6px]">
+          <Slider.Range className="absolute bg-beatscout-mint rounded-full h-full" />
+        </Slider.Track>
+        <Slider.Thumb
+          className="block w-4 h-4 bg-beatscout-mint rounded-full shadow-[0_2px_10px] shadow-black/20 hover:bg-beatscout-mint-dark focus:outline-none focus:ring-2 focus:ring-beatscout-mint/50 cursor-grab active:cursor-grabbing"
+          aria-label="Minimum"
         />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={localValue[0]}
-          onChange={(e) => handleMinChange(parseInt(e.target.value))}
-          className="absolute w-full h-full opacity-0 cursor-pointer z-10"
-          style={{ pointerEvents: 'auto' }}
+        <Slider.Thumb
+          className="block w-4 h-4 bg-beatscout-mint rounded-full shadow-[0_2px_10px] shadow-black/20 hover:bg-beatscout-mint-dark focus:outline-none focus:ring-2 focus:ring-beatscout-mint/50 cursor-grab active:cursor-grabbing"
+          aria-label="Maximum"
         />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={localValue[1]}
-          onChange={(e) => handleMaxChange(parseInt(e.target.value))}
-          className="absolute w-full h-full opacity-0 cursor-pointer z-20"
-          style={{ pointerEvents: 'auto' }}
-        />
-        <div 
-          className="absolute w-4 h-4 bg-beatscout-mint rounded-full shadow-lg pointer-events-none"
-          style={{ left: `calc(${minPercent}% - 8px)` }}
-        />
-        <div 
-          className="absolute w-4 h-4 bg-beatscout-mint rounded-full shadow-lg pointer-events-none"
-          style={{ left: `calc(${maxPercent}% - 8px)` }}
-        />
-      </div>
+      </Slider.Root>
     </div>
   )
 }
@@ -83,6 +150,7 @@ export default function ExplorerPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [metadata, setMetadata] = useState<any>(null)
+  const [threeLoaded, setThreeLoaded] = useState(false)
   
   const [tempoRange, setTempoRange] = useState<[number, number]>([120, 145])
   const [danceabilityRange, setDanceabilityRange] = useState<[number, number]>([0, 100])
@@ -92,6 +160,24 @@ export default function ExplorerPage() {
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedSong, setSelectedSong] = useState<SongData | null>(null)
   const [anchorSongId, setAnchorSongId] = useState<string>('')
+
+  // Preload Three.js when component mounts
+  useEffect(() => {
+    const preloadThree = async () => {
+      try {
+        await Promise.all([
+          import('@react-three/fiber'),
+          import('three'),
+          import('@react-three/drei'),
+          import('@react-three/postprocessing')
+        ])
+        setThreeLoaded(true)
+      } catch (err) {
+        console.error('Failed to preload Three.js:', err)
+      }
+    }
+    preloadThree()
+  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -140,18 +226,9 @@ export default function ExplorerPage() {
 
   const genres = ['All', 'House', 'Techno', 'Tech House']
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen bg-beatscout-bg">
-        <Sidebar isLoggedIn={false} />
-        <main className="flex-1 ml-64 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-beatscout-text-secondary">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Loading analysis data...</span>
-          </div>
-        </main>
-      </div>
-    )
+  // Combined loading state - show skeleton while data is loading OR Three.js isn't ready
+  if (loading || !threeLoaded) {
+    return <PageSkeleton />
   }
 
   if (error) {
@@ -206,17 +283,19 @@ export default function ExplorerPage() {
             </div>
             
             <div className="relative h-[500px]">
-              <Canvas 
-                camera={{ position: [60, 60, 60], fov: 60 }}
-                gl={{ antialias: true, alpha: true }}
-              >
-                <color attach="background" args={['#141619']} />
-                <NeuralScene 
-                  data={filteredSongs} 
-                  onPointClick={setSelectedSong}
-                  anchorSongId={anchorSongId}
-                />
-              </Canvas>
+              <Suspense fallback={<CanvasSkeleton />}>
+                <Canvas 
+                  camera={{ position: [60, 60, 60], fov: 60 }}
+                  gl={{ antialias: true, alpha: true }}
+                >
+                  <color attach="background" args={['#141619']} />
+                  <NeuralScene 
+                    data={filteredSongs} 
+                    onPointClick={setSelectedSong}
+                    anchorSongId={anchorSongId}
+                  />
+                </Canvas>
+              </Suspense>
               
               {/* Axis Labels */}
               <div className="absolute bottom-4 left-4 text-xs text-beatscout-text-secondary space-y-1">
@@ -359,11 +438,7 @@ export default function ExplorerPage() {
                         <div 
                           className="w-2 h-2 rounded-full"
                           style={{ 
-                            backgroundColor: new THREE.Color().lerpColors(
-                              new THREE.Color('#1E3A8A'),
-                              new THREE.Color('#F97316'),
-                              song.production_quality / 100
-                            ).getStyle()
+                            backgroundColor: `hsl(${220 + (song.production_quality / 100) * 40}, 70%, ${30 + (song.production_quality / 100) * 50}%)`
                           }}
                         />
                         <span className="text-beatscout-mint">{song.production_quality}</span>

@@ -54,3 +54,25 @@ async def get_current_user(
 async def get_current_user_id(user: dict = Depends(get_current_user)) -> str:
     """Get just the user ID from the token."""
     return user.get("sub")
+
+
+def hash_password(password: str) -> str:
+    """Hash a plain text password.
+
+    Bcrypt has a 72-byte limit, so we truncate to be safe.
+    """
+    # Truncate to 72 bytes (bcrypt limit) to avoid passlib errors
+    password_bytes = password.encode("utf-8")[:72]
+    truncated = password_bytes.decode("utf-8", errors="ignore")
+    return pwd_context.hash(truncated)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain text password against a hash.
+
+    Must truncate to match what hash_password does.
+    """
+    # Truncate to 72 bytes (bcrypt limit)
+    password_bytes = plain_password.encode("utf-8")[:72]
+    truncated = password_bytes.decode("utf-8", errors="ignore")
+    return pwd_context.verify(truncated, hashed_password)

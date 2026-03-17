@@ -1,10 +1,11 @@
-version: '3.9'
+# version: '3.9' (obsolete)
 
 services:
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: production
     ports:
       - "3000:3000"
     environment:

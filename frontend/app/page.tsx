@@ -3,13 +3,47 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Play, Music, Sparkles, ArrowRight } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
 
 export default function LandingPage() {
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+
+  // Preload Three.js bundle when landing page loads
+  useEffect(() => {
+    // Start preloading Three.js libraries in the background
+    const preloadThree = () => {
+      // Use requestIdleCallback to preload when browser is idle
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => {
+          Promise.all([
+            import('@react-three/fiber'),
+            import('three'),
+            import('@react-three/drei'),
+            import('@react-three/postprocessing')
+          ]).catch(() => {
+            // Silently fail - will load normally when user navigates to explorer
+          })
+        }, { timeout: 5000 })
+      } else {
+        // Fallback for Safari
+        setTimeout(() => {
+          Promise.all([
+            import('@react-three/fiber'),
+            import('three'),
+            import('@react-three/drei'),
+            import('@react-three/postprocessing')
+          ]).catch(() => {
+            // Silently fail
+          })
+        }, 1000)
+      }
+    }
+
+    preloadThree()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,17 +85,17 @@ export default function LandingPage() {
           >
             Get a Plan
           </Link>
-          <a 
-            href="/api/auth/soundcloud/login"
+          <Link 
+            href="/auth/login"
             className="px-6 py-2.5 bg-beatscout-mint text-beatscout-bg font-semibold rounded-full hover:bg-beatscout-mint-dark transition-colors"
           >
             Get Started
-          </a>
+          </Link>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative z-10 flex flex-col items-center justify-center px-4 pt-12 pb-16 text-center">
+      <section className="relative z-10 flex flex-col items-center justify-center px-4 text-center h-[calc(100vh-80px)] overflow-hidden">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -73,40 +107,40 @@ export default function LandingPage() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2, duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 mb-8 rounded-full bg-beatscout-border/50 border border-beatscout-border"
+            className="inline-flex items-center gap-2 px-4 py-2 mb-4 rounded-full bg-beatscout-border/50 border border-beatscout-border"
           >
             <Sparkles className="w-4 h-4 text-beatscout-mint" />
             <span className="text-sm text-beatscout-text-secondary">SoundCloud Integration</span>
           </motion.div>
 
           {/* Main Heading */}
-          <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold mb-6 tracking-tight">
+          <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-3 tracking-tight">
             <span className="bg-gradient-to-r from-white via-beatscout-mint to-white bg-clip-text text-transparent">
               BeatScout
             </span>
           </h1>
 
-          <p className="text-2xl md:text-3xl text-beatscout-text-secondary mb-6 font-light">
+          <p className="text-xl md:text-2xl text-beatscout-text-secondary mb-3 font-light">
             Discover Edits Like Never Before
           </p>
 
-          <p className="text-lg text-beatscout-text-secondary/80 max-w-2xl mx-auto mb-4">
+          <p className="text-base text-beatscout-text-secondary/80 max-w-2xl mx-auto mb-4">
             Discover unique edits, remixes, and bootlegs through intelligent audio analysis. 
             Navigate a galaxy of tracks in immersive 3D space.
           </p>
 
           {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+          <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
             <Link
               href="/explorer"
-              className="group inline-flex items-center gap-2 px-8 py-4 bg-beatscout-mint text-beatscout-bg font-semibold rounded-full hover:bg-beatscout-mint-dark transition-all hover:scale-105"
+              className="group inline-flex items-center gap-2 px-6 py-3 bg-beatscout-mint text-beatscout-bg font-semibold rounded-full hover:bg-beatscout-mint-dark transition-all hover:scale-105"
             >
               Enter the Explorer
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
             <a
               href="#features"
-              className="inline-flex items-center gap-2 px-8 py-4 border border-beatscout-border rounded-full hover:border-beatscout-mint hover:text-beatscout-mint transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 border border-beatscout-border rounded-full hover:border-beatscout-mint hover:text-beatscout-mint transition-colors"
             >
               <Play className="w-5 h-5" />
               Watch Demo
@@ -154,7 +188,7 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.2, duration: 0.6 }}
-          className="mt-12 grid grid-cols-3 gap-12 text-center"
+          className="mt-6 grid grid-cols-3 gap-12 text-center"
         >
           <div>
             <div className="text-4xl font-bold text-white">10M+</div>

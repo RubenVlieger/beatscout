@@ -74,6 +74,49 @@ export function NeuralOrb({
   
   const actuallyHovered = isHovered || internalHovered
   
+  // Material properties based on quality - MeshPhysicalMaterial provides clearcoat for high quality
+  const materialProps = useMemo(() => {
+    const q = data.production_quality
+    if (q >= 70) {
+      // High quality: smooth, polished with clearcoat
+      return {
+        roughness: 0.05,
+        metalness: 0.9,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.0,
+        sheen: 0.2,
+        sheenRoughness: 0.1,
+        sheenColor: new THREE.Color(color)
+      }
+    }
+    if (q >= 40) {
+      // Medium quality: semi-polished, subtle clearcoat
+      return {
+        roughness: 0.2,
+        metalness: 0.7,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.1,
+        sheen: 0.0
+      }
+    }
+    // Low quality: rough, matte, no clearcoat
+    return {
+      roughness: 0.5,
+      metalness: 0.5,
+      clearcoat: 0.0,
+      clearcoatRoughness: 0.5,
+      sheen: 0.0
+    }
+  }, [data.production_quality, color])
+  
+  // Bobbing speed based on quality
+  const bobbingSpeed = useMemo(() => {
+    const q = data.production_quality
+    if (q >= 70) return 0.5
+    if (q >= 40) return 0.4
+    return 0.3
+  }, [data.production_quality])
+  
   // Emissive intensity based on production quality and selection state
   const emissiveIntensity = useMemo(() => {
     const baseIntensity = 0.3
@@ -110,8 +153,8 @@ export function NeuralOrb({
     
     const time = state.clock.elapsedTime
     
-    // Breathing animation - subtle Y offset based on time and index
-    const breathOffset = Math.sin(time * 0.5 + index * 0.2) * 0.5
+    // Breathing animation - subtle Y offset based on time, index, and quality
+    const breathOffset = Math.sin(time * bobbingSpeed + index * 0.2) * 0.5
     
     // Handle position animation for orbit mode
     if (orbitMode && orbitPosition) {
@@ -154,7 +197,7 @@ export function NeuralOrb({
     
     // Update material opacity
     if (meshRef.current.material) {
-      const material = meshRef.current.material as THREE.MeshStandardMaterial
+      const material = meshRef.current.material as THREE.MeshPhysicalMaterial
       material.opacity = THREE.MathUtils.lerp(material.opacity || 1, targetOpacity, 0.1)
     }
     
@@ -202,12 +245,17 @@ export function NeuralOrb({
       {/* Main Orb - visual only, no interaction handlers */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshStandardMaterial
+        <meshPhysicalMaterial
           color={color}
           emissive={color}
           emissiveIntensity={emissiveIntensity}
-          roughness={0.2}
-          metalness={0.8}
+          roughness={materialProps.roughness}
+          metalness={materialProps.metalness}
+          clearcoat={materialProps.clearcoat}
+          clearcoatRoughness={materialProps.clearcoatRoughness}
+          sheen={materialProps.sheen}
+          sheenRoughness={materialProps.sheenRoughness || 0}
+          sheenColor={materialProps.sheenColor || new THREE.Color(0x000000)}
           transparent
           opacity={targetOpacity}
         />

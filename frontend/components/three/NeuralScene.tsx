@@ -6,8 +6,8 @@ import { CameraControls, Html, Stars } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import type { SongData } from './NeuralOrb'
-import { NeuralOrb } from './NeuralOrb'
 import { NeuralFilaments } from './NeuralFilaments'
+import { NeuralOrbs } from './NeuralOrbs'
 
 // Types
 interface NeuralSceneProps {
@@ -20,7 +20,11 @@ interface NodeData {
   id: string
   position: [number, number, number]
   color: THREE.Color
+  colorHex: string
   data: SongData
+  quality: 'high' | 'medium' | 'low'
+  bobbingSpeed: number
+  emissiveIntensity: number
 }
 
 // Calculate Euclidean distance between two 3D points
@@ -101,7 +105,7 @@ function CameraController({
       ref={controlsRef}
       makeDefault
       minDistance={10}
-      maxDistance={200}
+      maxDistance={160}
       restThreshold={0.01}
       smoothTime={0.5}
       draggingSmoothTime={0.1}
@@ -124,7 +128,7 @@ function NeuralWeb({
   const [centerNode, setCenterNode] = useState<SongData | null>(null)
   const [orbitingNeighbors, setOrbitingNeighbors] = useState<SongData[]>([])
   
-  // Process nodes with positions and colors
+  // Process nodes with positions, colors, and pre-computed properties
   const nodes = useMemo<NodeData[]>(() => {
     return data.map(song => {
       // Map Tempo (120-145) to X axis (-50 to 50)
@@ -135,46 +139,73 @@ function NeuralWeb({
       const z = song.temperament - 50
       
       // Color based on production quality (dark blue to bright orange)
-      const quality = song.production_quality / 100
+      const qualityFactor = song.production_quality / 100
       const color = new THREE.Color().lerpColors(
         new THREE.Color('#1E3A8A'),  // Dark blue (low quality)
         new THREE.Color('#F97316'),  // Bright orange (high quality)
-        quality
+        qualityFactor
       )
+      
+      // Pre-compute color as hex string for efficient use
+      const colorHex = color.getHexString()
+      
+      // Pre-compute quality tier for material selection
+      const quality = song.production_quality >= 70 ? 'high' : song.production_quality >= 40 ? 'medium' : 'low'
+      
+      // Pre-compute bobbing speed
+      const bobbingSpeed = song.production_quality >= 70 ? 0.5 : song.production_quality >= 40 ? 0.4 : 0.3
+      
+      // Pre-compute emissive intensity
+      const emissiveIntensity = 0.3 + (song.production_quality / 100) * 1.2
       
       return {
         id: song.id,
         position: [x, y, z] as [number, number, number],
         color,
-        data: song
+        colorHex,
+        data: song,
+        quality,
+        bobbingSpeed,
+        emissiveIntensity
       }
     })
   }, [data])
   
-  // Calculate which nodes should be dimmed
+  // Pre-compute adjacency map for fast neighbor lookups
+  const adjacencyMap = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    
+    // For each node, find neighbors within 30 units
+    nodes.forEach(node => {
+      const neighbors = new Set<string>()
+      nodes.forEach(otherNode => {
+        if (node.id !== otherNode.id) {
+          const distance = getDistance(node.position, otherNode.position)
+          if (distance < 30) {
+            neighbors.add(otherNode.id)
+          }
+        }
+      })
+      map.set(node.id, neighbors)
+    })
+    
+    return map
+  }, [nodes])
+  
+  // Calculate which nodes should be dimmed using adjacency map (O(1) lookup)
   const dimmedNodeIds = useMemo(() => {
     if (!hoveredNodeId) return new Set<string>()
     
-    // Find the hovered node's neighbors
-    const hoveredNode = nodes.find(n => n.id === hoveredNodeId)
-    if (!hoveredNode) return new Set<string>()
+    // Get pre-computed neighbors from adjacency map
+    const neighbors = adjacencyMap.get(hoveredNodeId)
+    if (!neighbors) return new Set<string>()
     
-    // Calculate distances to find connected nodes
-    const connectedIds = new Set<string>([hoveredNodeId])
-    
-    nodes.forEach(node => {
-      if (node.id !== hoveredNodeId) {
-        const distance = getDistance(node.position, hoveredNode.position)
-        // Consider nodes within 30 units as connected
-        if (distance < 30) {
-          connectedIds.add(node.id)
-        }
-      }
-    })
+    // Build set of IDs that should NOT be dimmed (hovered + neighbors)
+    const connectedIds = new Set<string>([hoveredNodeId, ...Array.from(neighbors)])
     
     // Return IDs of nodes that should be dimmed (not in connected set)
     return new Set(nodes.filter(n => !connectedIds.has(n.id)).map(n => n.id))
-  }, [hoveredNodeId, nodes])
+  }, [hoveredNodeId, nodes, adjacencyMap])
   
   // Calculate orbit positions for neighbors
   const orbitPositions = useMemo(() => {
@@ -272,12 +303,8 @@ function NeuralWeb({
     }
   }, [orbitMode, centerNode, orbitingNeighbors, findNearestNeighbors, onPointClick])
   
-  const handleNodeHover = useCallback((nodeId: string) => {
+  const handleNodeHover = useCallback((nodeId: string | null) => {
     setHoveredNodeId(nodeId)
-  }, [])
-  
-  const handleNodeLeave = useCallback(() => {
-    setHoveredNodeId(null)
   }, [])
   
   // Build node data for filaments
@@ -322,36 +349,21 @@ function NeuralWeb({
         orbitPositions={orbitPositions}
       />
       
-      {/* Neural orbs (nodes) */}
-      {nodes.map((node, index) => {
-        const isCenter = centerNode?.id === node.id
-        const isOrbiting = orbitingNeighbors.some(n => n.id === node.id)
-        const shouldHide = orbitMode && !isCenter && !isOrbiting
-        const orbitPosition = isOrbiting ? orbitPositions.get(node.id) || null : null
-        
-        return (
-          <NeuralOrb
-            key={node.id}
-            position={node.position}
-            color={node.color}
-            data={node.data}
-            isAnchor={node.id === anchorSongId}
-            isHovered={hoveredNodeId === node.id}
-            isDimmed={dimmedNodeIds.has(node.id)}
-            isSelected={selectedNodeId === node.id}
-            onClick={() => handleNodeClick(node)}
-            onDoubleClick={() => handleNodeDoubleClick(node)}
-            onHover={() => handleNodeHover(node.id)}
-            onLeave={handleNodeLeave}
-            index={index}
-            orbitMode={orbitMode}
-            isCenter={isCenter}
-            isOrbiting={isOrbiting}
-            shouldHide={shouldHide}
-            orbitPosition={orbitPosition}
-          />
-        )
-      })}
+      {/* Neural orbs (nodes) - Instanced for performance */}
+      <NeuralOrbs
+        nodes={nodes}
+        anchorSongId={anchorSongId}
+        hoveredNodeId={hoveredNodeId}
+        dimmedNodeIds={dimmedNodeIds}
+        selectedNodeId={selectedNodeId}
+        orbitMode={orbitMode}
+        centerNode={centerNode}
+        orbitingNeighbors={orbitingNeighbors}
+        orbitPositions={orbitPositions}
+        onNodeClick={(nodeId) => handleNodeClick(nodes.find(n => n.id === nodeId)!)}
+        onNodeDoubleClick={(nodeId) => handleNodeDoubleClick(nodes.find(n => n.id === nodeId)!)}
+        onNodeHover={handleNodeHover}
+      />
       
       {/* Camera controller */}
       <CameraController 
@@ -367,7 +379,7 @@ function NeuralWeb({
           luminanceThreshold={0.1}
           luminanceSmoothing={0.9}
           height={300}
-          intensity={1.5}
+          intensity={7.0}
         />
       </EffectComposer>
     </>

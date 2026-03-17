@@ -1,0 +1,17 @@
+# version: '3.9' (obsolete)
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    volumes:
+      # Mount source code for hot reload
+      - ./frontend:/app:cached
+      # Use container's node_modules (don't overwrite with host)
+      - /app/node_modules
+    command: npm run dev
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true

@@ -1,8 +1,7 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Line } from '@react-three/drei'
 import * as THREE from 'three'
 import type { SongData } from './NeuralOrb'
 
@@ -47,10 +46,13 @@ function findNearestNeighbors(
   return distances.slice(0, count).map(d => d.node)
 }
 
-interface Connection {
+interface BaseConnection {
   from: NodeData
   to: NodeData
   color: THREE.Color
+}
+
+interface Connection extends BaseConnection {
   isHighlighted: boolean
   isDimmed: boolean
   isOrbitConnection?: boolean
@@ -66,11 +68,13 @@ export function NeuralFilaments({
   orbitingNeighbors,
   orbitPositions
 }: NeuralFilamentsProps) {
-  // Calculate connections based on mode
-  const connections = useMemo(() => {
+  const lineSegmentsRef = useRef<THREE.LineSegments>(null)
+  
+  // Pre-compute static topology (no hover state dependencies)
+  const baseConnections = useMemo(() => {
     // If in orbit mode, render hub-and-spoke connections
     if (orbitMode && centerNode) {
-      const result: Connection[] = []
+      const result: BaseConnection[] = []
       const centerNodeData = nodes.find(n => n.data.id === centerNode.id)
       
       if (!centerNodeData) return result
@@ -97,14 +101,10 @@ export function NeuralFilaments({
           quality
         )
         
-        // Hub and spoke connections are always highlighted
         result.push({
           from: { position: centerPosition, data: centerNode },
           to: { position: neighborPosition, data: neighbor },
-          color: lineColor,
-          isHighlighted: true,
-          isDimmed: false,
-          isOrbitConnection: true
+          color: lineColor
         })
       })
       
@@ -112,7 +112,7 @@ export function NeuralFilaments({
     }
     
     // Normal mode: neural web connections
-    const result: Connection[] = []
+    const result: BaseConnection[] = []
     const processedPairs = new Set<string>()
     
     nodes.forEach(node => {
@@ -144,88 +144,130 @@ export function NeuralFilaments({
           
           const lineColor = new THREE.Color().lerpColors(fromColor, toColor, 0.5)
           
-          // Determine if this connection should be highlighted
-          const isHighlighted = 
-            hoveredNodeId === node.data.id || 
-            hoveredNodeId === neighbor.data.id
-          
-          // Determine if this connection should be dimmed
-          const isDimmed = 
-            dimmedNodeIds.has(node.data.id) || 
-            dimmedNodeIds.has(neighbor.data.id)
-          
           result.push({
             from: node,
             to: neighbor,
-            color: isHighlighted ? new THREE.Color('#68ED9E') : lineColor,
-            isHighlighted,
-            isDimmed
+            color: lineColor
           })
         }
       })
     })
     
     return result
-  }, [nodes, hoveredNodeId, dimmedNodeIds, orbitMode, centerNode, orbitingNeighbors, orbitPositions])
+  }, [nodes, orbitMode, centerNode, orbitingNeighbors, orbitPositions])
   
-  return (
-    <group>
-      {connections.map((connection, index) => (
-        <FilamentLine 
-          key={`${connection.from.data.id}-${connection.to.data.id}-${index}`}
-          connection={connection}
-          orbitMode={orbitMode}
-        />
-      ))}
-    </group>
-  )
-}
-
-// Individual filament component with animation
-function FilamentLine({ connection, orbitMode }: { connection: Connection; orbitMode: boolean }) {
-  const lineRef = useRef<any>(null)
-  
-  // Calculate opacity based on state
-  const targetOpacity = orbitMode
-    ? 0.8 // Orbit mode connections are always bright
-    : connection.isHighlighted 
-      ? 0.8 
-      : connection.isDimmed 
-        ? 0.05 
-        : 0.15
-  
-  const targetLineWidth = orbitMode
-    ? 2 // Orbit mode uses consistent width
-    : connection.isHighlighted 
-      ? 3 
-      : 1
-  
-  useFrame(() => {
-    if (lineRef.current) {
-      // Smoothly interpolate line width
-      lineRef.current.material.linewidth = THREE.MathUtils.lerp(
-        lineRef.current.material.linewidth || 1,
-        targetLineWidth,
-        0.1
+  // Build connections with visual state for position/color arrays
+  const connectionsWithVisuals = useMemo<Connection[]>(() => {
+    const highlightColor = new THREE.Color('#68ED9E')
+    
+    return baseConnections.map(conn => {
+      const isHighlighted = orbitMode 
+        ? true
+        : hoveredNodeId === conn.from.data.id || hoveredNodeId === conn.to.data.id
+      
+      const isDimmed = !orbitMode && (
+        dimmedNodeIds.has(conn.from.data.id) || 
+        dimmedNodeIds.has(conn.to.data.id)
       )
-    }
+      
+      return {
+        ...conn,
+        color: isHighlighted ? highlightColor : conn.color,
+        isHighlighted,
+        isDimmed
+      }
+    })
+  }, [baseConnections, hoveredNodeId, dimmedNodeIds, orbitMode])
+  
+  // Generate position and color arrays for BufferGeometry
+  const { positions, colors } = useMemo(() => {
+    const pos = new Float32Array(connectionsWithVisuals.length * 6)
+    const col = new Float32Array(connectionsWithVisuals.length * 6)
+    
+    connectionsWithVisuals.forEach((conn, i) => {
+      // Start vertex
+      pos[i * 6 + 0] = conn.from.position[0]
+      pos[i * 6 + 1] = conn.from.position[1]
+      pos[i * 6 + 2] = conn.from.position[2]
+      // End vertex
+      pos[i * 6 + 3] = conn.to.position[0]
+      pos[i * 6 + 4] = conn.to.position[1]
+      pos[i * 6 + 5] = conn.to.position[2]
+
+      // Start color
+      col[i * 6 + 0] = conn.color.r
+      col[i * 6 + 1] = conn.color.g
+      col[i * 6 + 2] = conn.color.b
+      // End color
+      col[i * 6 + 3] = conn.color.r
+      col[i * 6 + 4] = conn.color.g
+      col[i * 6 + 5] = conn.color.b
+    })
+    return { positions: pos, colors: col }
+  }, [connectionsWithVisuals])
+  
+  // Efficient hover state updates - directly mutate color buffer
+  useEffect(() => {
+    if (!lineSegmentsRef.current || baseConnections.length === 0) return
+    
+    const colorAttribute = lineSegmentsRef.current.geometry.attributes.color
+    const colorArray = colorAttribute.array as Float32Array
+    const highlightColor = new THREE.Color('#68ED9E')
+    
+    // Update colors based on hover state
+    baseConnections.forEach((conn, i) => {
+      const isHighlighted = orbitMode 
+        ? true
+        : hoveredNodeId === conn.from.data.id || hoveredNodeId === conn.to.data.id
+      
+      const targetColor = isHighlighted ? highlightColor : conn.color
+      
+      // Update start vertex color
+      colorArray[i * 6 + 0] = targetColor.r
+      colorArray[i * 6 + 1] = targetColor.g
+      colorArray[i * 6 + 2] = targetColor.b
+      // Update end vertex color
+      colorArray[i * 6 + 3] = targetColor.r
+      colorArray[i * 6 + 4] = targetColor.g
+      colorArray[i * 6 + 5] = targetColor.b
+    })
+    
+    colorAttribute.needsUpdate = true
+  }, [baseConnections, hoveredNodeId, orbitMode])
+  
+  // Update opacity in useFrame for smooth transitions
+  useFrame(() => {
+    if (!lineSegmentsRef.current) return
+    
+    const material = lineSegmentsRef.current.material as THREE.LineBasicMaterial
+    const targetOpacity = orbitMode ? 0.8 : 0.3
+    material.opacity = THREE.MathUtils.lerp(material.opacity, targetOpacity, 0.1)
   })
   
-  const points = useMemo(() => {
-    return [connection.from.position, connection.to.position].map(
-      p => new THREE.Vector3(...p)
-    )
-  }, [connection.from.position, connection.to.position])
+  if (connectionsWithVisuals.length === 0) return null
   
   return (
-    <Line
-      ref={lineRef}
-      points={points}
-      color={connection.color}
-      lineWidth={targetLineWidth}
-      transparent
-      opacity={targetOpacity}
-    />
+    <lineSegments ref={lineSegmentsRef} key={connectionsWithVisuals.length}>
+      <bufferGeometry>
+        <bufferAttribute 
+          attach="attributes-position" 
+          count={positions.length / 3} 
+          array={positions} 
+          itemSize={3} 
+        />
+        <bufferAttribute 
+          attach="attributes-color" 
+          count={colors.length / 3} 
+          array={colors} 
+          itemSize={3} 
+        />
+      </bufferGeometry>
+      <lineBasicMaterial 
+        vertexColors 
+        transparent 
+        opacity={orbitMode ? 0.8 : 0.3} 
+      />
+    </lineSegments>
   )
 }
 

@@ -235,6 +235,78 @@ Ensure the model is downloaded to `models/music_audioset_epoch_15_esc_90.14.pt` 
 python main.py track.mp3 --model /path/to/model.pt
 ```
 
+## Docker Development
+
+For full-stack development with hot reload:
+
+### Quick Start (Development Mode)
+
+```bash
+# Start all services with hot reload (no rebuilds needed for code changes!)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+# Or just frontend and backend (no database):
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up frontend backend
+```
+
+**Development Features:**
+- **Frontend**: Changes reflect instantly (~2 seconds) via Next.js hot reload
+- **Backend**: Auto-reloads on Python file changes
+- **No container rebuilds** needed for code changes
+- Just edit files and refresh browser
+
+### Production Mode (Build & Deploy)
+
+```bash
+# Build fresh images and start (slow, use only for deployment)
+docker compose up --build
+
+# Build only frontend:
+docker compose up --build frontend
+
+# Build only backend:
+docker compose up --build backend
+```
+
+**Use production mode only when:**
+- Deploying to production
+- Testing production builds
+- Package dependencies changed (package.json, requirements.txt)
+
+### Environment Variables
+
+Create a `.env` file:
+
+```env
+NEXTAUTH_SECRET=your-secret-key-here
+JWT_SECRET_KEY=your-jwt-secret-here
+SOUNDCLOUD_CLIENT_ID=optional
+SOUNDCLOUD_CLIENT_SECRET=optional
+```
+
+### Common Tasks
+
+**Install new dependencies:**
+```bash
+# Frontend - update package.json, then:
+docker compose up --build frontend
+
+# Backend - update requirements.txt, then:
+docker compose up --build backend
+```
+
+**View logs:**
+```bash
+docker compose logs -f frontend
+docker compose logs -f backend
+```
+
+**Stop services:**
+```bash
+docker compose down
+docker compose down -v  # Also remove database
+```
+
 ## Development
 
 ### Running Tests

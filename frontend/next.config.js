@@ -4,6 +4,9 @@ const nextConfig = {
   images: {
     domains: ['i1.sndcdn.com', 'i2.sndcdn.com'],
   },
+  experimental: {
+    optimizePackageImports: ['three', '@react-three/fiber', '@react-three/drei', '@react-three/postprocessing'],
+  },
   async rewrites() {
     return [
       {

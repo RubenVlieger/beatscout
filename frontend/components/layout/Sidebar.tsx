@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -11,8 +12,20 @@ import {
   Settings,
   LogOut,
   Sparkles,
-  Lock
+  Lock,
+  User
 } from 'lucide-react'
+import { authApi } from '@/lib/api'
+
+interface UserData {
+  id: string
+  email: string | null
+  username: string
+  avatar_url: string | null
+  auth_provider: string
+  soundcloud_connected: boolean
+  stripe_customer_id: string | null
+}
 
 interface SidebarProps {
   isLoggedIn?: boolean
@@ -27,8 +40,32 @@ const navItems = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
 
-export default function Sidebar({ isLoggedIn = false }: SidebarProps) {
+export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: SidebarProps) {
+  const router = useRouter()
+  const [isLoggedIn, setIsLoggedIn] = useState(initialLoggedIn)
+  const [user, setUser] = useState<UserData | null>(null)
   const [showLockedMessage, setShowLockedMessage] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token')
+      if (token) {
+        try {
+          const response = await authApi.getMe()
+          setUser(response.data)
+          setIsLoggedIn(true)
+        } catch (error) {
+          // Token invalid or expired
+          localStorage.removeItem('token')
+          setIsLoggedIn(false)
+        }
+      }
+      setIsLoading(false)
+    }
+
+    checkAuth()
+  }, [])
 
   const handleNewSongClick = (e: React.MouseEvent) => {
     if (!isLoggedIn) {
@@ -36,6 +73,32 @@ export default function Sidebar({ isLoggedIn = false }: SidebarProps) {
       setShowLockedMessage(true)
       setTimeout(() => setShowLockedMessage(false), 3000)
     }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout()
+    } catch (error) {
+      // Ignore logout errors
+    }
+    localStorage.removeItem('token')
+    setIsLoggedIn(false)
+    setUser(null)
+    router.push('/')
+  }
+
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  }
+
+  if (isLoading) {
+    return (
+      <aside className="w-64 bg-beatscout-panel border-r border-beatscout-border flex flex-col h-screen fixed left-0 top-0">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-beatscout-mint border-t-transparent rounded-full animate-spin" />
+        </div>
+      </aside>
+    )
   }
 
   return (
@@ -75,10 +138,10 @@ export default function Sidebar({ isLoggedIn = false }: SidebarProps) {
               Login or upgrade to analyze new songs
             </p>
             <Link 
-              href="/plans" 
+              href="/auth/login" 
               className="text-beatscout-mint hover:underline mt-1 block"
             >
-              Get a Plan →
+              Sign In →
             </Link>
           </div>
         )}
@@ -102,26 +165,61 @@ export default function Sidebar({ isLoggedIn = false }: SidebarProps) {
       </nav>
 
       {/* User Profile */}
-      {isLoggedIn ? (
+      {isLoggedIn && user ? (
         <div className="p-4 border-t border-beatscout-border">
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-beatscout-border/50">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beatscout-mint to-beatscout-blue flex items-center justify-center">
-              <span className="text-beatscout-bg font-bold text-sm">DJ</span>
-            </div>
+            {user.avatar_url ? (
+              <img 
+                src={user.avatar_url} 
+                alt={user.username}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beatscout-mint to-beatscout-blue flex items-center justify-center">
+                <span className="text-beatscout-bg font-bold text-sm">
+                  {getInitials(user.username)}
+                </span>
+              </div>
+            )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">DJ Name</p>
-              <p className="text-xs text-beatscout-text-secondary truncate">'Ctrl_Alt_Dance'</p>
+              <p className="text-sm font-medium text-white truncate">{user.username}</p>
+              <p className="text-xs text-beatscout-text-secondary truncate">
+                {user.email || user.auth_provider}
+              </p>
             </div>
-            <button className="text-beatscout-text-secondary hover:text-white">
+            <button 
+              onClick={handleLogout}
+              className="text-beatscout-text-secondary hover:text-white transition-colors"
+              title="Sign out"
+            >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
+          
+          {!user.soundcloud_connected && (
+            <Link
+              href="/settings"
+              className="mt-2 flex items-center gap-2 px-4 py-2 text-xs text-beatscout-mint hover:text-beatscout-mint-dark transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.269-2.154c-.009-.06-.052-.1-.085-.1z" />
+              </svg>
+              Link SoundCloud for API access
+            </Link>
+          )}
         </div>
       ) : (
-        <div className="p-4 border-t border-beatscout-border">
+        <div className="p-4 border-t border-beatscout-border space-y-2">
+          <Link
+            href="/auth/login"
+            className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-beatscout-mint text-beatscout-bg font-semibold hover:bg-beatscout-mint-dark transition-colors"
+          >
+            <User className="w-4 h-4" />
+            Sign In
+          </Link>
           <Link
             href="/plans"
-            className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-beatscout-mint text-beatscout-bg font-semibold hover:bg-beatscout-mint-dark transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-beatscout-border text-beatscout-text-secondary hover:border-beatscout-mint hover:text-beatscout-mint transition-colors"
           >
             <Sparkles className="w-4 h-4" />
             Get a Plan
