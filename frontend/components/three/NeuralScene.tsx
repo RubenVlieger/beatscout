@@ -120,32 +120,31 @@ function getDistance(p1: [number, number, number], p2: [number, number, number])
 // Camera controller that smoothly focuses on selected node and handles orbit mode
 function CameraController({
   targetPosition,
-  isFocusing,
   orbitMode,
   centerNode,
   preview,
-  screenshotMode
+  screenshotMode,
+  dragNodeWorldPos
 }: {
   targetPosition: THREE.Vector3 | null
-  isFocusing: boolean
   orbitMode: boolean
   centerNode: SongData | null
   preview: boolean
   screenshotMode?: boolean
+  dragNodeWorldPos: THREE.Vector3 | null
 }) {
   const controlsRef = useRef<CameraControls>(null)
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
 
-  // Track if we need to animate camera
+  // Track state for transitions
   const lastOrbitMode = useRef(orbitMode)
   const lastCenterNode = useRef<SongData | null>(null)
   const isInitialized = useRef(false)
   
-  // Animation state for intro rotation
+  // Animation state for intro rotation (preview mode)
   const isAnimating = useRef(false)
   const animationTimeRef = useRef(0)
   
-  // Start animation after 1 second delay in preview mode
   useEffect(() => {
     if (!preview) return
     const timer = setTimeout(() => {
@@ -154,126 +153,155 @@ function CameraController({
     return () => clearTimeout(timer)
   }, [preview])
 
-  // Animation constants - 2x slower for smoother, more elegant rotation
-  const ANIMATION_DURATION = 300000 // ~300 seconds for full 360-degree rotation
-  // Uses shared camera config - change in camera-config.ts to update everywhere
+  const ANIMATION_DURATION = 300000
   const INITIAL_DISTANCE = CAMERA_RADIUS
 
-  // Animation frame handler for continuous circular rotation
+  // Preview mode: continuous circular rotation
   useFrame((state, delta) => {
-    // Skip animation in screenshot mode - camera stays static
     if (screenshotMode) return
-
-    // Only animate in preview mode
     if (!preview || !isAnimating.current) return
 
-    // Use delta time for smooth animation regardless of frame rate
     animationTimeRef.current += delta * 1000
-    const elapsed = animationTimeRef.current % ANIMATION_DURATION // Seamless loop
+    const elapsed = animationTimeRef.current % ANIMATION_DURATION
     const progress = elapsed / ANIMATION_DURATION
-
-    // Continuous 360-degree rotation (no zoom, no back-and-forth)
-    const fullAngle = progress * Math.PI * 2 // 0 to 360 degrees
-
-    // Calculate camera position based on spherical coordinates
-    // Start from isometric angle and rotate around Y axis
+    const fullAngle = progress * Math.PI * 2
     const currentAngle = CAMERA_BASE_ANGLE + fullAngle
-
-    // Constant radius (no zoom in/out)
     const radius = INITIAL_DISTANCE
 
-    // Calculate position (maintaining isometric-like view while rotating)
     const x = radius * Math.sin(currentAngle) * Math.cos(CAMERA_ELEVATION_ANGLE)
     const z = radius * Math.cos(currentAngle) * Math.cos(CAMERA_ELEVATION_ANGLE)
     const y = radius * Math.sin(CAMERA_ELEVATION_ANGLE)
 
-    // Update camera position directly to avoid setLookAt overhead
     camera.position.set(x, y, z)
     camera.lookAt(0, 0, 0)
-    // Note: updateProjectionMatrix() not needed for position updates
   })
   
+  // Manual orbit: when a node is held, orbit camera around it via canvas pointermove
+  useEffect(() => {
+    if (!controlsRef.current || preview) return
+    if (!dragNodeWorldPos) {
+      // Node released — sync CameraControls to wherever manual orbit left the camera
+      if (controlsRef.current) {
+        const pos = camera.position
+        controlsRef.current.setLookAt(pos.x, pos.y, pos.z, 0, 0, 0, false)
+      }
+      return
+    }
+    
+    const canvas = gl.domElement
+    const nodePos = dragNodeWorldPos.clone()
+    let startX = 0
+    let startY = 0
+    let hasStart = false
+    let orbiting = false
+    const DEAD_ZONE = 3 // pixels before orbit activates
+    
+    const onPointerMove = (e: PointerEvent) => {
+      if (!hasStart) {
+        startX = e.clientX
+        startY = e.clientY
+        hasStart = true
+        return
+      }
+      
+      // Dead zone: don't orbit until cursor moves 3+ px from initial position
+      if (!orbiting) {
+        const dist = Math.sqrt((e.clientX - startX) ** 2 + (e.clientY - startY) ** 2)
+        if (dist < DEAD_ZONE) return
+        orbiting = true
+        // Reset start to current pos so first orbit step isn't a big jump
+        startX = e.clientX
+        startY = e.clientY
+        return
+      }
+      
+      const dx = e.clientX - startX
+      const dy = e.clientY - startY
+      startX = e.clientX
+      startY = e.clientY
+      
+      // Orbit camera around the node using spherical coordinates
+      const sensitivity = 0.005
+      const offset = camera.position.clone().sub(nodePos)
+      const spherical = new THREE.Spherical().setFromVector3(offset)
+      spherical.theta -= dx * sensitivity
+      spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - dy * sensitivity))
+      offset.setFromSpherical(spherical)
+      camera.position.copy(nodePos).add(offset)
+      camera.lookAt(nodePos)
+    }
+    
+    canvas.addEventListener('pointermove', onPointerMove)
+    return () => canvas.removeEventListener('pointermove', onPointerMove)
+  }, [dragNodeWorldPos, camera, gl, preview])
+  
+  // Handle orbit mode and focus transitions
   useEffect(() => {
     if (!controlsRef.current) return
     
-    // Check if orbit mode or center node changed
     const orbitChanged = lastOrbitMode.current !== orbitMode
     const centerChanged = lastCenterNode.current?.id !== centerNode?.id
     
-    // Note: Animation continues running for screen recording purposes
-    // User interactions will temporarily override, but animation resumes when reset
-    
     if (orbitMode && centerNode && (orbitChanged || centerChanged)) {
-      // Entering orbit mode or switching center - animate to top-down view
+      // Entering double-click orbit mode — top-down perpendicular to the neighbor ring
       const centerX = ((centerNode.tempo - 120) / 25) * 100 - 50
       const centerY = centerNode.danceability - 50
       const centerZ = centerNode.temperament - 50
-      
-      // Camera positioned above looking down
-      const newPosition = new THREE.Vector3(centerX, centerY, centerZ + 40)
-      const lookAt = new THREE.Vector3(centerX, centerY, centerZ)
-      
+
       controlsRef.current.setLookAt(
-        newPosition.x, newPosition.y, newPosition.z,
-        lookAt.x, lookAt.y, lookAt.z,
-        true // enable transition
+        centerX, centerY, centerZ + 40,
+        centerX, centerY, centerZ,
+        true
       )
-      // Pause animation while in orbit mode
       isAnimating.current = false
     } else if (!orbitMode && orbitChanged) {
-      // Exiting orbit mode - animation will automatically resume on next frame
-      isAnimating.current = true
-      animationTimeRef.current = 0
-    } else if (targetPosition && isFocusing && !orbitMode) {
-      // Normal focus mode (single click)
+      if (preview) {
+        isAnimating.current = true
+        animationTimeRef.current = 0
+      }
+    } else if (targetPosition && !orbitMode) {
+      // Single-click focus
       const offset = new THREE.Vector3(20, 15, 20)
       const newPosition = targetPosition.clone().add(offset)
       
       controlsRef.current.setLookAt(
         newPosition.x, newPosition.y, newPosition.z,
         targetPosition.x, targetPosition.y, targetPosition.z,
-        true // enable transition
+        true
       )
-      // Pause animation while focusing
-      isAnimating.current = false
+      if (preview) {
+        isAnimating.current = false
+      }
     }
     
     lastOrbitMode.current = orbitMode
     lastCenterNode.current = centerNode
-  }, [targetPosition, isFocusing, orbitMode, centerNode])
+  }, [targetPosition, orbitMode, centerNode, preview])
 
-  // Initialize camera position on mount - runs for ALL modes to ensure consistency
+  // Initialize camera position on mount
   useEffect(() => {
     if (isInitialized.current) return
     isInitialized.current = true
 
-    // Position camera at the exact starting frame of the animation
-    // Uses shared CAMERA_INITIAL_POSITION from camera-config.ts
     const [x, y, z] = CAMERA_INITIAL_POSITION
-
-    // Set camera position and look at origin immediately
     camera.position.set(x, y, z)
     camera.lookAt(0, 0, 0)
     camera.updateProjectionMatrix()
 
-    // Also update CameraControls to match, preventing any transition animation
     if (controlsRef.current) {
       controlsRef.current.setLookAt(x, y, z, 0, 0, 0, false)
     }
+  }, [camera])
 
-    if (screenshotMode) {
-      console.log('Screenshot mode: Camera positioned at frame 0', { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) })
-    }
-  }, [screenshotMode, camera])
-
-  // In preview mode, disable smooth transitions to prevent CameraControls
-  // from animating away from our scripted animation position
   const isPreviewMode = preview || screenshotMode
+  // Disable CameraControls during orbit mode AND during manual drag-orbit
+  const controlsDisabled = orbitMode || !!dragNodeWorldPos
 
   return (
     <CameraControls
       ref={controlsRef}
       makeDefault
+      enabled={!controlsDisabled}
       minDistance={10}
       maxDistance={160}
       restThreshold={0.01}
@@ -294,12 +322,14 @@ function NeuralWeb({
 }: NeuralSceneProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [isTransitioning, setIsTransitioning] = useState(false)
   
-  // Orbit mode state
+  // Double-click orbit mode state (shows center node + neighbors in ring)
   const [orbitMode, setOrbitMode] = useState(false)
   const [centerNode, setCenterNode] = useState<SongData | null>(null)
   const [orbitingNeighbors, setOrbitingNeighbors] = useState<SongData[]>([])
+  
+  // Press-and-hold drag orbit state (orbits camera around held node)
+  const [dragOrbitNodeId, setDragOrbitNodeId] = useState<string | null>(null)
   
   // Process nodes with positions, colors, and pre-computed properties
   const nodes = useMemo<NodeData[]>(() => {
@@ -415,12 +445,19 @@ function NeuralWeb({
     return positions
   }, [orbitMode, centerNode, orbitingNeighbors])
   
-  // Get target position for camera focus
+  // Get target position for camera focus (single-click)
   const targetPosition = useMemo(() => {
     if (!selectedNodeId) return null
     const node = nodes.find(n => n.id === selectedNodeId)
     return node ? new THREE.Vector3(...node.position) : null
   }, [selectedNodeId, nodes])
+  
+  // Get drag-orbit target position (press-and-hold on a node)
+  const dragNodeWorldPos = useMemo(() => {
+    if (!dragOrbitNodeId) return null
+    const node = nodes.find(n => n.id === dragOrbitNodeId)
+    return node ? new THREE.Vector3(...node.position) : null
+  }, [dragOrbitNodeId, nodes])
   
   // Find nearest neighbors for orbit mode
   const findNearestNeighbors = useCallback((centerNodeData: SongData, count: number = 9): SongData[] => {
@@ -439,16 +476,9 @@ function NeuralWeb({
   }, [nodes])
   
   const handleNodeClick = useCallback((node: NodeData) => {
-    // Toggle selection - if clicking same node, deselect it
     const isSameNode = selectedNodeId === node.id
-    const newSelectedId = isSameNode ? null : node.id
-    
-    setSelectedNodeId(newSelectedId)
-    setIsTransitioning(true)
+    setSelectedNodeId(isSameNode ? null : node.id)
     onPointClick(isSameNode ? null : node.data)
-    
-    // Quick transition - no delay
-    setIsTransitioning(false)
   }, [selectedNodeId, onPointClick])
   
   const handleNodeDoubleClick = useCallback((node: NodeData) => {
@@ -478,6 +508,25 @@ function NeuralWeb({
   
   const handleNodeHover = useCallback((nodeId: string | null) => {
     setHoveredNodeId(nodeId)
+  }, [])
+  
+  // Press-and-hold: set drag orbit node immediately.
+  // Dead zone in the orbit handler prevents jitter on click/double-click.
+  const handleNodePointerDown = useCallback((nodeId: string) => {
+    if (orbitMode) return
+    setDragOrbitNodeId(nodeId)
+    setHoveredNodeId(null)
+  }, [orbitMode])
+  
+  const handleNodePointerUp = useCallback(() => {
+    setDragOrbitNodeId(null)
+  }, [])
+  
+  // Safety: clear drag state on global pointer-up (e.g. mouse released outside canvas)
+  useEffect(() => {
+    const handleGlobalPointerUp = () => setDragOrbitNodeId(null)
+    window.addEventListener('pointerup', handleGlobalPointerUp)
+    return () => window.removeEventListener('pointerup', handleGlobalPointerUp)
   }, [])
   
   // Build node data for filaments
@@ -528,16 +577,19 @@ function NeuralWeb({
         onNodeClick={(nodeId) => handleNodeClick(nodes.find(n => n.id === nodeId)!)}
         onNodeDoubleClick={(nodeId) => handleNodeDoubleClick(nodes.find(n => n.id === nodeId)!)}
         onNodeHover={handleNodeHover}
+        onNodePointerDown={handleNodePointerDown}
+        onNodePointerUp={handleNodePointerUp}
+        dragOrbitNodeId={dragOrbitNodeId}
       />
       
       {/* Camera controller */}
       <CameraController
         targetPosition={targetPosition}
-        isFocusing={isTransitioning}
         orbitMode={orbitMode}
         centerNode={centerNode}
         preview={!!preview}
         screenshotMode={!!screenshotMode}
+        dragNodeWorldPos={dragNodeWorldPos}
       />
       
       {/* Bloom post-processing */}

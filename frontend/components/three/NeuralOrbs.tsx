@@ -147,6 +147,9 @@ interface NeuralOrbsProps {
   onNodeClick: (nodeId: string) => void
   onNodeDoubleClick: (nodeId: string) => void
   onNodeHover: (nodeId: string | null) => void
+  onNodePointerDown: (nodeId: string) => void
+  onNodePointerUp: () => void
+  dragOrbitNodeId: string | null
 }
 
 export function NeuralOrbs({
@@ -161,7 +164,10 @@ export function NeuralOrbs({
   orbitPositions,
   onNodeClick,
   onNodeDoubleClick,
-  onNodeHover
+  onNodeHover,
+  onNodePointerDown,
+  onNodePointerUp,
+  dragOrbitNodeId
 }: NeuralOrbsProps) {
   // Three.js hooks
   const { camera, size } = useThree()
@@ -560,6 +566,9 @@ export function NeuralOrbs({
   
   // Scene-level raycasting for accurate depth-based hover selection
   const handleScenePointerMove = useCallback((event: { pointer: { x: number; y: number } }) => {
+    // Suppress hover updates while drag-orbiting to prevent tooltip flickering
+    if (dragOrbitNodeId) return
+    
     // Update pointer coordinates from event
     const { x, y } = event.pointer
     pointer.set(x, y)
@@ -629,7 +638,7 @@ export function NeuralOrbs({
         onNodeHover(nodeId)
       }, 30)
     }
-  }, [camera, pointer, raycaster, qualityToGlobalMap, onNodeHover])
+  }, [camera, pointer, raycaster, qualityToGlobalMap, onNodeHover, dragOrbitNodeId])
   
   const handleScenePointerOut = useCallback(() => {
     // Clear any pending show debounce
@@ -671,6 +680,21 @@ export function NeuralOrbs({
     }
   }, [getNodeByQualityAndInstanceId, onNodeDoubleClick])
   
+  const handlePointerDown = useCallback((event: { instanceId?: number; stopPropagation?: () => void }, quality: 'high' | 'medium' | 'low') => {
+    const instanceId = event.instanceId
+    if (typeof instanceId !== 'number') return
+    
+    const node = getNodeByQualityAndInstanceId(quality, instanceId)
+    if (node) {
+      onNodePointerDown(node.id)
+      event.stopPropagation?.()
+    }
+  }, [getNodeByQualityAndInstanceId, onNodePointerDown])
+  
+  const handlePointerUp = useCallback(() => {
+    onNodePointerUp()
+  }, [onNodePointerUp])
+  
   // Get hovered node index for tooltip
   const hoveredNodeIndex = useMemo(() => {
     if (!hoveredNodeId) return -1
@@ -683,6 +707,7 @@ export function NeuralOrbs({
         ref={groupRef}
         onPointerMove={handleScenePointerMove}
         onPointerOut={handleScenePointerOut}
+        onPointerUp={handlePointerUp}
       >
         {/* High Quality Orbs */}
         <instancedMesh
@@ -690,6 +715,7 @@ export function NeuralOrbs({
           args={[orbGeometry, qualityMaterials.high, qualityGroups.high.length]}
           onClick={(e) => handleClick(e, 'high')}
           onDoubleClick={(e) => handleDoubleClick(e, 'high')}
+          onPointerDown={(e) => handlePointerDown(e, 'high')}
           frustumCulled={false}
         />
         
@@ -699,6 +725,7 @@ export function NeuralOrbs({
           args={[orbGeometry, qualityMaterials.medium, qualityGroups.medium.length]}
           onClick={(e) => handleClick(e, 'medium')}
           onDoubleClick={(e) => handleDoubleClick(e, 'medium')}
+          onPointerDown={(e) => handlePointerDown(e, 'medium')}
           frustumCulled={false}
         />
         
@@ -708,6 +735,7 @@ export function NeuralOrbs({
           args={[orbGeometry, qualityMaterials.low, qualityGroups.low.length]}
           onClick={(e) => handleClick(e, 'low')}
           onDoubleClick={(e) => handleDoubleClick(e, 'low')}
+          onPointerDown={(e) => handlePointerDown(e, 'low')}
           frustumCulled={false}
         />
       </group>
