@@ -2,18 +2,17 @@ version: '3.9'
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/rubenvlieger/beatscout-backend:latest
+    container_name: beatscout-backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/beatscout
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_URL=postgresql+asyncpg://rubenvlieger:rubenvlieger1234catlightcalculatorbackflip@db:5432/beatscout
+      - JWT_SECRET_KEY=rubenvlieger1234catlightcalculatorbackflip # Warning: Move this to a .env file later!
       - SOUNDCLOUD_CLIENT_ID=${SOUNDCLOUD_CLIENT_ID:-}
       - SOUNDCLOUD_CLIENT_SECRET=${SOUNDCLOUD_CLIENT_SECRET:-}
-      - SOUNDCLOUD_REDIRECT_URI=http://localhost:3000/api/auth/callback/soundcloud
+      - SOUNDCLOUD_REDIRECT_URI=http://beatscout.rubenvlieger.nl/api/auth/callback/soundcloud
       - DEBUG=false
       - PYTHONPATH=/app:/app/src
     depends_on:
@@ -28,15 +27,18 @@ services:
 
   db:
     image: postgres:15-alpine
+    container_name: beatscout-db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=rubenvlieger
+      - POSTGRES_PASSWORD=rubenvlieger1234catlightcalculatorbackflip
       - POSTGRES_DB=beatscout
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - beatscout-network
     restart: always
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     deploy:
       resources:
         limits:
