@@ -27,3 +27,10 @@ jobs:
           context: ./backend  # Path to your backend folder
           push: true
           tags: ghcr.io/rubenvlieger/beatscout-backend:latest
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend  # Path to your frontend folder
+          push: true
+          tags: ghcr.io/rubenvlieger/beatscout-frontend:latest

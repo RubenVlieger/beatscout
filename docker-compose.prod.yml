@@ -21,6 +21,14 @@ services:
       resources:
         limits:
           memory: 300M
+  frontend:
+    image: ghcr.io/rubenvlieger/beatscout-frontend:latest
+    container_name: beatscout-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=https://beatscout.rubenvlieger.nl/api # Tells your UI where the backend is
+    networks:
+      - web-proxy
+    restart: always
 
   db:
     image: postgres:15-alpine
