@@ -119,14 +119,12 @@ function getDistance(p1: [number, number, number], p2: [number, number, number])
 
 // Camera controller that smoothly focuses on selected node and handles orbit mode
 function CameraController({
-  targetPosition,
   orbitMode,
   centerNode,
   preview,
   screenshotMode,
   dragNodeWorldPos
 }: {
-  targetPosition: THREE.Vector3 | null
   orbitMode: boolean
   centerNode: SongData | null
   preview: boolean
@@ -137,13 +135,15 @@ function CameraController({
   const { camera, gl } = useThree()
 
   // Track state for transitions
-  const lastOrbitMode = useRef(orbitMode)
-  const lastCenterNode = useRef<SongData | null>(null)
   const isInitialized = useRef(false)
   
   // Animation state for intro rotation (preview mode)
   const isAnimating = useRef(false)
   const animationTimeRef = useRef(0)
+  
+  // Manual orbit state: track the camera's focal target during drag
+  const dragTargetRef = useRef(new THREE.Vector3())
+  const wasDragging = useRef(false)
   
   useEffect(() => {
     if (!preview) return
@@ -176,74 +176,108 @@ function CameraController({
     camera.lookAt(0, 0, 0)
   })
   
-  // Manual orbit: when a node is held, orbit camera around it via canvas pointermove
+  // Manual orbit: when a node is held, orbit camera around it WITHOUT centering it.
+  // CameraControls is fully disabled (enabled=false) during drag so it doesn't
+  // override our manual camera.position changes.
   useEffect(() => {
     if (!controlsRef.current || preview) return
+    
     if (!dragNodeWorldPos) {
-      // Node released — sync CameraControls to wherever manual orbit left the camera
-      if (controlsRef.current) {
+      // Node released — sync CameraControls internal state to wherever we left the camera
+      if (wasDragging.current) {
+        wasDragging.current = false
         const pos = camera.position
-        controlsRef.current.setLookAt(pos.x, pos.y, pos.z, 0, 0, 0, false)
+        const t = dragTargetRef.current
+        controlsRef.current.setLookAt(pos.x, pos.y, pos.z, t.x, t.y, t.z, false)
       }
       return
     }
     
+    // Drag starting: snapshot the current CameraControls target
+    wasDragging.current = true
+    controlsRef.current.getTarget(dragTargetRef.current)
+
     const canvas = gl.domElement
     const nodePos = dragNodeWorldPos.clone()
+    const currentTarget = dragTargetRef.current // mutable ref, updated in-place
+    let prevX = 0
+    let prevY = 0
+    let hasStart = false
     let startX = 0
     let startY = 0
-    let hasStart = false
     let orbiting = false
-    const DEAD_ZONE = 3 // pixels before orbit activates
+    const DEAD_ZONE = 3
     
     const onPointerMove = (e: PointerEvent) => {
       if (!hasStart) {
+        hasStart = true
         startX = e.clientX
         startY = e.clientY
-        hasStart = true
+        prevX = e.clientX
+        prevY = e.clientY
         return
       }
       
-      // Dead zone: don't orbit until cursor moves 3+ px from initial position
       if (!orbiting) {
         const dist = Math.sqrt((e.clientX - startX) ** 2 + (e.clientY - startY) ** 2)
         if (dist < DEAD_ZONE) return
         orbiting = true
-        // Reset start to current pos so first orbit step isn't a big jump
-        startX = e.clientX
-        startY = e.clientY
+        prevX = e.clientX
+        prevY = e.clientY
         return
       }
       
-      const dx = e.clientX - startX
-      const dy = e.clientY - startY
-      startX = e.clientX
-      startY = e.clientY
+      const dx = e.clientX - prevX
+      const dy = e.clientY - prevY
+      prevX = e.clientX
+      prevY = e.clientY
       
-      // Orbit camera around the node using spherical coordinates
       const sensitivity = 0.005
-      const offset = camera.position.clone().sub(nodePos)
-      const spherical = new THREE.Spherical().setFromVector3(offset)
-      spherical.theta -= dx * sensitivity
-      spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - dy * sensitivity))
-      offset.setFromSpherical(spherical)
-      camera.position.copy(nodePos).add(offset)
-      camera.lookAt(nodePos)
+      
+      // Rotate BOTH camera position AND focal target around the node pivot.
+      // Because both rotate by the exact same quaternion around the same pivot,
+      // the node's screen-space position stays perfectly fixed — no centering!
+      
+      // Azimuth (around world Y)
+      const qY = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0), dx * sensitivity
+      )
+      
+      // Elevation (around camera's local X / right axis)
+      const camForward = new THREE.Vector3()
+        .subVectors(currentTarget, camera.position).normalize()
+      const camRight = new THREE.Vector3()
+        .crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize()
+      const qX = new THREE.Quaternion().setFromAxisAngle(camRight, dy * sensitivity)
+      
+      const q = new THREE.Quaternion().multiplyQuaternions(qY, qX)
+
+      // Rotate camera position around the node
+      const camOffset = camera.position.clone().sub(nodePos)
+      camOffset.applyQuaternion(q)
+      camera.position.copy(nodePos).add(camOffset)
+
+      // Rotate focal target around the same node by the same amount
+      const targetOffset = currentTarget.clone().sub(nodePos)
+      targetOffset.applyQuaternion(q)
+      currentTarget.copy(nodePos).add(targetOffset)
+
+      camera.lookAt(currentTarget)
     }
     
     canvas.addEventListener('pointermove', onPointerMove)
     return () => canvas.removeEventListener('pointermove', onPointerMove)
   }, [dragNodeWorldPos, camera, gl, preview])
   
-  // Handle orbit mode and focus transitions
+  // Handle orbit mode camera transitions
+  // Uses centerNode?.id as a string dep to ensure updates fire reliably even if
+  // the centerNode object reference is reused.
+  const centerNodeId = centerNode?.id ?? null
   useEffect(() => {
     if (!controlsRef.current) return
     
-    const orbitChanged = lastOrbitMode.current !== orbitMode
-    const centerChanged = lastCenterNode.current?.id !== centerNode?.id
-    
-    if (orbitMode && centerNode && (orbitChanged || centerChanged)) {
-      // Entering double-click orbit mode — top-down perpendicular to the neighbor ring
+    if (orbitMode && centerNode) {
+      // In orbit mode (entering or switching center node) — top-down perpendicular view
       const centerX = ((centerNode.tempo - 120) / 25) * 100 - 50
       const centerY = centerNode.danceability - 50
       const centerZ = centerNode.temperament - 50
@@ -254,29 +288,14 @@ function CameraController({
         true
       )
       isAnimating.current = false
-    } else if (!orbitMode && orbitChanged) {
+    } else if (!orbitMode) {
       if (preview) {
         isAnimating.current = true
         animationTimeRef.current = 0
       }
-    } else if (targetPosition && !orbitMode) {
-      // Single-click focus
-      const offset = new THREE.Vector3(20, 15, 20)
-      const newPosition = targetPosition.clone().add(offset)
-      
-      controlsRef.current.setLookAt(
-        newPosition.x, newPosition.y, newPosition.z,
-        targetPosition.x, targetPosition.y, targetPosition.z,
-        true
-      )
-      if (preview) {
-        isAnimating.current = false
-      }
     }
-    
-    lastOrbitMode.current = orbitMode
-    lastCenterNode.current = centerNode
-  }, [targetPosition, orbitMode, centerNode, preview])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orbitMode, centerNodeId, preview])
 
   // Initialize camera position on mount
   useEffect(() => {
@@ -294,14 +313,18 @@ function CameraController({
   }, [camera])
 
   const isPreviewMode = preview || screenshotMode
-  // Disable CameraControls during orbit mode AND during manual drag-orbit
-  const controlsDisabled = orbitMode || !!dragNodeWorldPos
+  
+  // During drag-orbit: fully disable CameraControls so it doesn't override manual camera changes.
+  // During orbit mode: keep enabled for setLookAt animation, but block all user input.
+  const isDragging = !!dragNodeWorldPos
 
   return (
     <CameraControls
       ref={controlsRef}
       makeDefault
-      enabled={!controlsDisabled}
+      enabled={!isDragging}
+      mouseButtons={orbitMode ? { left: 0, middle: 0, right: 0, wheel: 0 } : undefined}
+      touches={orbitMode ? { one: 0, two: 0, three: 0 } : undefined}
       minDistance={10}
       maxDistance={160}
       restThreshold={0.01}
@@ -321,7 +344,6 @@ function NeuralWeb({
   onSceneReady
 }: NeuralSceneProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   
   // Double-click orbit mode state (shows center node + neighbors in ring)
   const [orbitMode, setOrbitMode] = useState(false)
@@ -445,13 +467,6 @@ function NeuralWeb({
     return positions
   }, [orbitMode, centerNode, orbitingNeighbors])
   
-  // Get target position for camera focus (single-click)
-  const targetPosition = useMemo(() => {
-    if (!selectedNodeId) return null
-    const node = nodes.find(n => n.id === selectedNodeId)
-    return node ? new THREE.Vector3(...node.position) : null
-  }, [selectedNodeId, nodes])
-  
   // Get drag-orbit target position (press-and-hold on a node)
   const dragNodeWorldPos = useMemo(() => {
     if (!dragOrbitNodeId) return null
@@ -476,10 +491,8 @@ function NeuralWeb({
   }, [nodes])
   
   const handleNodeClick = useCallback((node: NodeData) => {
-    const isSameNode = selectedNodeId === node.id
-    setSelectedNodeId(isSameNode ? null : node.id)
-    onPointClick(isSameNode ? null : node.data)
-  }, [selectedNodeId, onPointClick])
+    onPointClick(node.data)
+  }, [onPointClick])
   
   const handleNodeDoubleClick = useCallback((node: NodeData) => {
     if (!orbitMode) {
@@ -487,21 +500,17 @@ function NeuralWeb({
       setCenterNode(node.data)
       setOrbitingNeighbors(findNearestNeighbors(node.data, 9))
       setOrbitMode(true)
-      // Also select the node
-      setSelectedNodeId(node.id)
       onPointClick(node.data)
     } else if (centerNode?.id === node.data.id) {
       // Exiting orbit mode (double-clicked center)
       setOrbitMode(false)
       setCenterNode(null)
       setOrbitingNeighbors([])
-      setSelectedNodeId(null)
       onPointClick(null)
     } else if (orbitingNeighbors.some(n => n.id === node.data.id)) {
-      // Switching to new center (clicked an orbiting node)
+      // Switching to new center (double-clicked a neighbor)
       setCenterNode(node.data)
       setOrbitingNeighbors(findNearestNeighbors(node.data, 9))
-      setSelectedNodeId(node.id)
       onPointClick(node.data)
     }
   }, [orbitMode, centerNode, orbitingNeighbors, findNearestNeighbors, onPointClick])
@@ -569,7 +578,6 @@ function NeuralWeb({
         anchorSongId={anchorSongId}
         hoveredNodeId={hoveredNodeId}
         dimmedNodeIds={dimmedNodeIds}
-        selectedNodeId={selectedNodeId}
         orbitMode={orbitMode}
         centerNode={centerNode}
         orbitingNeighbors={orbitingNeighbors}
@@ -584,7 +592,6 @@ function NeuralWeb({
       
       {/* Camera controller */}
       <CameraController
-        targetPosition={targetPosition}
         orbitMode={orbitMode}
         centerNode={centerNode}
         preview={!!preview}

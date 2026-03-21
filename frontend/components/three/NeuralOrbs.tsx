@@ -139,7 +139,6 @@ interface NeuralOrbsProps {
   anchorSongId: string
   hoveredNodeId: string | null
   dimmedNodeIds: Set<string>
-  selectedNodeId: string | null
   orbitMode: boolean
   centerNode: SongData | null
   orbitingNeighbors: SongData[]
@@ -157,7 +156,6 @@ export function NeuralOrbs({
   anchorSongId,
   hoveredNodeId,
   dimmedNodeIds,
-  selectedNodeId,
   orbitMode,
   centerNode,
   orbitingNeighbors,
@@ -183,9 +181,7 @@ export function NeuralOrbs({
   const groupRef = useRef<THREE.Group>(null)
   
   // Track hover state
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoveredNodeRef = useRef<string | null>(null)
-  const hoverDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Track which nodes need animation updates (hover, selection, orbit mode transitions)
   const animatingNodesRef = useRef<Set<string>>(new Set())
@@ -320,11 +316,6 @@ export function NeuralOrbs({
       }
     }
     
-    // Selection changes
-    if (selectedNodeId) {
-      animatingNodesRef.current.add(selectedNodeId)
-    }
-    
     // Center node changes in orbit mode
     if (centerNode?.id) {
       animatingNodesRef.current.add(centerNode.id)
@@ -332,7 +323,7 @@ export function NeuralOrbs({
     
     // Orbiting neighbors
     orbitingNeighbors.forEach(n => animatingNodesRef.current.add(n.id))
-  }, [hoveredNodeId, selectedNodeId, centerNode, orbitingNeighbors, orbitMode, nodes])
+  }, [hoveredNodeId, centerNode, orbitingNeighbors, orbitMode, nodes])
   
   // Helper to get target position WITHOUT breathing offset (now handled in GPU)
   const getTargetPosition = useCallback((node: NeuralOrbData, index: number): [number, number, number] => {
@@ -359,7 +350,7 @@ export function NeuralOrbs({
   const getTargetScale = useCallback((node: NeuralOrbData): number => {
     const isAnchor = node.id === anchorSongId
     const isHovered = hoveredNodeId === node.id
-    const isSelected = selectedNodeId === node.id
+    const isSelected = false
     const isCenter = centerNode?.id === node.id
     const isOrbiting = orbitingNeighbors.some(n => n.id === node.id)
     const shouldHide = orbitMode && !isCenter && !isOrbiting
@@ -376,7 +367,7 @@ export function NeuralOrbs({
     const defaultScale = isAnchor ? 1.5 : 0.8
     
     return baseScale * hoverScale * selectionScale * centerScale * orbitingScale * dimmedScale * defaultScale
-  }, [anchorSongId, hoveredNodeId, selectedNodeId, centerNode, orbitingNeighbors, orbitMode, dimmedNodeIds])
+  }, [anchorSongId, hoveredNodeId, centerNode, orbitingNeighbors, orbitMode, dimmedNodeIds])
   
   // Helper to get target opacity
   const getTargetOpacity = useCallback((node: NeuralOrbData): number => {
@@ -445,7 +436,7 @@ export function NeuralOrbs({
         highOrbRef.current!.setMatrixAt(i, tempMatrix)
 
         // Update color with emissive boost
-        const emissiveBoost = 1 + (selectedNodeId === node.id ? 0.5 : 0) + (centerNode?.id === node.id ? 0.8 : 0)
+        const emissiveBoost = 1 + (centerNode?.id === node.id ? 0.8 : 0)
         tempColor.copy(node.color).multiplyScalar(emissiveBoost)
         highOrbRef.current!.setColorAt(i, tempColor)
       }
@@ -491,7 +482,7 @@ export function NeuralOrbs({
         tempMatrix.scale(tempScale)
         mediumOrbRef.current!.setMatrixAt(i, tempMatrix)
 
-        const emissiveBoost = 1 + (selectedNodeId === node.id ? 0.5 : 0) + (centerNode?.id === node.id ? 0.8 : 0)
+        const emissiveBoost = 1 + (centerNode?.id === node.id ? 0.8 : 0)
         tempColor.copy(node.color).multiplyScalar(emissiveBoost)
         mediumOrbRef.current!.setColorAt(i, tempColor)
       }
@@ -537,7 +528,7 @@ export function NeuralOrbs({
         tempMatrix.scale(tempScale)
         lowOrbRef.current!.setMatrixAt(i, tempMatrix)
 
-        const emissiveBoost = 1 + (selectedNodeId === node.id ? 0.5 : 0) + (centerNode?.id === node.id ? 0.8 : 0)
+        const emissiveBoost = 1 + (centerNode?.id === node.id ? 0.8 : 0)
         tempColor.copy(node.color).multiplyScalar(emissiveBoost)
         lowOrbRef.current!.setColorAt(i, tempColor)
       }
@@ -589,22 +580,13 @@ export function NeuralOrbs({
       raycaster.intersectObject(lowOrbRef.current, false, intersections)
     }
     
-    // If no intersections, schedule hover clear
+    // If no intersections, clear hover immediately
     if (intersections.length === 0) {
-      if (!hoverTimeoutRef.current && hoveredNodeRef.current !== null) {
-        hoverTimeoutRef.current = setTimeout(() => {
-          onNodeHover(null)
-          hoveredNodeRef.current = null
-          hoverTimeoutRef.current = null
-        }, 50)
+      if (hoveredNodeRef.current !== null) {
+        onNodeHover(null)
+        hoveredNodeRef.current = null
       }
       return
-    }
-    
-    // Cancel any pending hover clear since we're hovering something
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current)
-      hoverTimeoutRef.current = null
     }
     
     // Sort by distance and get closest
@@ -625,37 +607,19 @@ export function NeuralOrbs({
       nodeId = qualityToGlobalMap.low.get(closest.instanceId)
     }
     
+    // Fire hover immediately — no debounce
     if (nodeId && nodeId !== hoveredNodeRef.current) {
-      // Clear any pending debounce
-      if (hoverDebounceRef.current) {
-        clearTimeout(hoverDebounceRef.current)
-        hoverDebounceRef.current = null
-      }
-      
-      // Small delay before showing overlay to prevent flickering
-      hoverDebounceRef.current = setTimeout(() => {
-        hoveredNodeRef.current = nodeId
-        onNodeHover(nodeId)
-      }, 30)
+      hoveredNodeRef.current = nodeId
+      onNodeHover(nodeId)
     }
   }, [camera, pointer, raycaster, qualityToGlobalMap, onNodeHover, dragOrbitNodeId])
   
   const handleScenePointerOut = useCallback(() => {
-    // Clear any pending show debounce
-    if (hoverDebounceRef.current) {
-      clearTimeout(hoverDebounceRef.current)
-      hoverDebounceRef.current = null
-    }
-    
-    // Clear hover after timeout
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current)
-    }
-    hoverTimeoutRef.current = setTimeout(() => {
+    // Clear hover immediately when pointer leaves canvas
+    if (hoveredNodeRef.current !== null) {
       onNodeHover(null)
       hoveredNodeRef.current = null
-      hoverTimeoutRef.current = null
-    }, 50)
+    }
   }, [onNodeHover])
   
   const handleClick = useCallback((event: { instanceId?: number; stopPropagation?: () => void }, quality: 'high' | 'medium' | 'low') => {
@@ -766,7 +730,7 @@ export function NeuralOrbs({
         if (shouldHide) return null
         
         return (
-          <Html key={node.id} position={pos}>
+          <Html key={node.id} position={pos} style={{ pointerEvents: 'none' }}>
             <div 
               className="bg-[#0A0A0A]/95 backdrop-blur-md border border-[#39FF14] rounded-sm shadow-[0_0_20px_rgba(57,255,20,0.3)] pointer-events-none"
               style={{ 
