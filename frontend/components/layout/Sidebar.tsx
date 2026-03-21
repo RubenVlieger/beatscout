@@ -93,49 +93,49 @@ export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: Sidebar
 
   if (isLoading) {
     return (
-      <aside className="w-64 bg-beatscout-panel border-r border-beatscout-border flex flex-col h-screen fixed left-0 top-0">
+      <aside className="w-20 bg-beatscout-panel border-r border-beatscout-border flex flex-col h-screen fixed left-0 top-0">
         <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-beatscout-mint border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-beatscout-mint border-t-transparent rounded-sm animate-spin" />
         </div>
       </aside>
     )
   }
 
   return (
-    <aside className="w-64 bg-beatscout-panel border-r border-beatscout-border flex flex-col h-screen fixed left-0 top-0">
+    <aside className="w-20 bg-beatscout-panel border-r border-beatscout-border flex flex-col h-screen fixed left-0 top-0">
       {/* Logo */}
-      <div className="p-6 border-b border-beatscout-border">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
-            <div className="w-1 h-6 bg-beatscout-mint rounded-full" />
-            <div className="w-1 h-4 bg-beatscout-mint rounded-full" />
-            <div className="w-1 h-8 bg-beatscout-mint rounded-full" />
-          </div>
-          <span className="text-xl font-bold text-white">BeatScout</span>
+      <div className="p-4 border-b border-beatscout-border flex justify-center">
+        <Link href="/" className="flex items-center gap-1" title="BeatScout">
+          <div className="w-1 h-5 bg-beatscout-mint rounded-sm" />
+          <div className="w-1 h-3 bg-beatscout-mint rounded-sm" />
+          <div className="w-1 h-6 bg-beatscout-mint rounded-sm" />
         </Link>
       </div>
 
       {/* New Song Button */}
-      <div className="p-4">
+      <div className="p-3">
         <Link
           href="/request"
           onClick={handleNewSongClick}
-          className={`flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${
+          className={`flex items-center justify-center w-10 h-10 rounded-sm transition-colors group relative ${
             isLoggedIn
               ? 'bg-beatscout-mint text-beatscout-bg hover:bg-beatscout-mint-dark'
               : 'bg-beatscout-mint/20 text-beatscout-mint border border-beatscout-mint cursor-pointer'
           }`}
+          title={isLoggedIn ? "New Song" : "Login required"}
         >
           <PlusCircle className="w-5 h-5" />
-          <span>New Song</span>
-          {!isLoggedIn && <Lock className="w-4 h-4 ml-auto" />}
+          {/* Tooltip */}
+          <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
+            {isLoggedIn ? "New Song" : "Login required"}
+          </span>
         </Link>
         
         {showLockedMessage && (
-          <div className="mt-2 p-3 bg-beatscout-bg border border-beatscout-border rounded-lg text-sm">
+          <div className="mt-2 p-2 bg-beatscout-bg border border-beatscout-border rounded-sm text-xs">
             <p className="text-beatscout-text-secondary">
-              <Lock className="w-4 h-4 inline mr-1" />
-              Login or upgrade to analyze new songs
+              <Lock className="w-3 h-3 inline mr-1" />
+              Login required
             </p>
             <Link 
               href="/auth/login" 
@@ -148,17 +148,21 @@ export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: Sidebar
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 py-2 px-3 space-y-1">
         {navItems.map((item) => {
           const Icon = item.icon
           return (
             <Link
               key={item.name}
               href={item.href}
-              className="flex items-center gap-3 px-4 py-3 rounded-lg text-beatscout-text-secondary hover:bg-beatscout-border hover:text-white transition-colors"
+              className="flex items-center justify-center w-10 h-10 rounded-sm text-beatscout-text-secondary hover:text-white hover:bg-beatscout-border hover:border-l-2 hover:border-l-beatscout-mint transition-all group relative"
+              title={item.name}
             >
               <Icon className="w-5 h-5" />
-              <span className="font-medium">{item.name}</span>
+              {/* Tooltip */}
+              <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
+                {item.name}
+              </span>
             </Link>
           )
         })}
@@ -166,63 +170,73 @@ export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: Sidebar
 
       {/* User Profile */}
       {isLoggedIn && user ? (
-        <div className="p-4 border-t border-beatscout-border">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-beatscout-border/50">
+        <div className="p-3 border-t border-beatscout-border space-y-2">
+          <div className="flex flex-col items-center gap-2">
             {user.avatar_url ? (
               <img 
                 src={user.avatar_url} 
                 alt={user.username}
-                className="w-10 h-10 rounded-full object-cover"
+                className="w-10 h-10 rounded-sm object-cover"
               />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beatscout-mint to-beatscout-blue flex items-center justify-center">
+              <div className="w-10 h-10 rounded-sm bg-beatscout-mint flex items-center justify-center">
                 <span className="text-beatscout-bg font-bold text-sm">
                   {getInitials(user.username)}
                 </span>
               </div>
             )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user.username}</p>
-              <p className="text-xs text-beatscout-text-secondary truncate">
-                {user.email || user.auth_provider}
-              </p>
-            </div>
             <button 
               onClick={handleLogout}
-              className="text-beatscout-text-secondary hover:text-white transition-colors"
+              className="w-8 h-8 flex items-center justify-center text-beatscout-text-secondary hover:text-white transition-colors rounded-sm hover:bg-beatscout-border group relative"
               title="Sign out"
             >
               <LogOut className="w-4 h-4" />
+              {/* Tooltip */}
+              <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
+                Sign out
+              </span>
             </button>
           </div>
           
           {!user.soundcloud_connected && (
             <Link
               href="/settings"
-              className="mt-2 flex items-center gap-2 px-4 py-2 text-xs text-beatscout-mint hover:text-beatscout-mint-dark transition-colors"
+              className="flex items-center justify-center w-8 h-8 text-beatscout-mint hover:text-beatscout-mint-dark transition-colors rounded-sm hover:bg-beatscout-border group relative mx-auto"
+              title="Link SoundCloud"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.269-2.154c-.009-.06-.052-.1-.085-.1z" />
               </svg>
-              Link SoundCloud for API access
+              {/* Tooltip */}
+              <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
+                Link SoundCloud
+              </span>
             </Link>
           )}
         </div>
       ) : (
-        <div className="p-4 border-t border-beatscout-border space-y-2">
+        <div className="p-3 border-t border-beatscout-border space-y-2">
           <Link
             href="/auth/login"
-            className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-beatscout-mint text-beatscout-bg font-semibold hover:bg-beatscout-mint-dark transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-sm bg-beatscout-mint text-beatscout-bg font-semibold hover:bg-beatscout-mint-dark transition-colors group relative mx-auto"
+            title="Sign In"
           >
-            <User className="w-4 h-4" />
-            Sign In
+            <User className="w-5 h-5" />
+            {/* Tooltip */}
+            <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
+              Sign In
+            </span>
           </Link>
           <Link
             href="/plans"
-            className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-beatscout-border text-beatscout-text-secondary hover:border-beatscout-mint hover:text-beatscout-mint transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-sm border border-beatscout-border text-beatscout-text-secondary hover:border-beatscout-mint hover:text-beatscout-mint transition-colors group relative mx-auto"
+            title="Get a Plan"
           >
-            <Sparkles className="w-4 h-4" />
-            Get a Plan
+            <Sparkles className="w-5 h-5" />
+            {/* Tooltip */}
+            <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
+              Get a Plan
+            </span>
           </Link>
         </div>
       )}

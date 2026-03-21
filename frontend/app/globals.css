@@ -23,7 +23,7 @@
     --border: 216 12% 17%;
     --input: 216 12% 17%;
     --ring: 147 80% 67%;
-    --radius: 0.75rem;
+    --radius: 0.25rem;
   }
 }
 
@@ -36,23 +36,23 @@
   }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - sharp, industrial style */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #141619;
+  background: #050505;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2D3238;
-  border-radius: 4px;
+  background: #222222;
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d4248;
+  background: #333333;
 }
 
 /* Three.js canvas styling */

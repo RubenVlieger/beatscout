@@ -2,7 +2,7 @@
 Analysis orchestrator for BeatScout.
 
 This module provides the high-level analysis API, coordinating different
-analysis models (currently CLAP, future: Essentia) and managing result formatting.
+analysis models (currently MuQ-MuLan, future: Essentia) and managing result formatting.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .analyse_clap import ClapAnalyser, DEFAULT_MAX_DURATION_SEC
+from .analyse_muq_mulan import MuqMulanAnalyser, DEFAULT_MAX_DURATION_SEC
 
 
 # =============================================================================
@@ -29,22 +29,22 @@ class AnalysisResult:
 
     Attributes:
         audio_path: Path to the analyzed audio file
-        clap_scores: Dict of CLAP metric scores (0.0-1.0 scale)
+        scores: Dict of metric scores (0.0-1.0 scale)
         duration_sec: Actual duration of audio analyzed
-        sample_rate: Sample rate used for analysis (always 48000 for CLAP)
+        sample_rate: Sample rate used for analysis (always 24000 for MuQ-MuLan)
         analysis_time_ms: Time in milliseconds to complete the analysis
         metadata: Additional optional metadata (e.g., file format, size)
 
     Example:
         >>> result = engine.analyse_track("track.mp3")
-        >>> print(result.clap_scores)
+        >>> print(result.scores)
         {'production_quality': 0.7250, 'danceability': 0.8500, 'temperament': 0.6030}
     """
 
     audio_path: str
-    clap_scores: dict[str, float]
+    scores: dict[str, float]
     duration_sec: float
-    sample_rate: int = 48000
+    sample_rate: int = 24000
     analysis_time_ms: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -52,7 +52,7 @@ class AnalysisResult:
         """Convert result to dictionary for JSON serialization."""
         return {
             "audio_path": self.audio_path,
-            "clap_scores": self.clap_scores,
+            "scores": self.scores,
             "duration_sec": self.duration_sec,
             "sample_rate": self.sample_rate,
             "analysis_time_ms": self.analysis_time_ms,
@@ -65,9 +65,9 @@ class AnalysisResult:
             f"Analysis Result for: {self.audio_path}",
             f"Duration Analyzed: {self.duration_sec:.1f}s",
             "",
-            "CLAP Scores:",
+            "Scores:",
         ]
-        for metric_name, score in self.clap_scores.items():
+        for metric_name, score in self.scores.items():
             lines.append(f"  {metric_name}: {score:.4f}")
         return "\n".join(lines)
 
@@ -81,7 +81,7 @@ class AnalysisEngine:
     """
     Main analysis engine that orchestrates all analysis models.
 
-    Currently supports CLAP-based scoring. Designed to easily incorporate
+    Currently supports MuQ-MuLan-based scoring. Designed to easily incorporate
     additional analysis models in the future (e.g., Essentia for BPM/key).
 
     Example:
@@ -91,7 +91,7 @@ class AnalysisEngine:
         Analysis Result for: track.mp3
         Duration Analyzed: 60.0s
 
-        CLAP Scores:
+        Scores:
           production_quality: 0.7250
           danceability: 0.8500
           temperament: 0.6030
@@ -99,7 +99,6 @@ class AnalysisEngine:
 
     def __init__(
         self,
-        clap_model_path: str | Path | None = None,
         device: str | None = None,
         max_duration_sec: float = DEFAULT_MAX_DURATION_SEC,
     ):
@@ -107,14 +106,12 @@ class AnalysisEngine:
         Initialize the analysis engine with all models.
 
         Args:
-            clap_model_path: Path to CLAP checkpoint.
-                Defaults to models/music_audioset_epoch_15_esc_90.14.pt
             device: torch device ('cuda', 'mps', 'cpu').
                 Defaults to best available.
             max_duration_sec: Maximum audio duration to analyze.
                 Default 60s for efficiency.
         """
-        self.clap_analyser = ClapAnalyser(model_path=clap_model_path, device=device)
+        self.muq_analyser = MuqMulanAnalyser(device=device)
         self.max_duration_sec = max_duration_sec
 
     def analyse_track(self, audio_path: str | Path) -> AnalysisResult:
@@ -122,7 +119,7 @@ class AnalysisEngine:
         Analyze a single track through all analysis models.
 
         This is the main entry point for track analysis. It runs all
-        configured models (currently just CLAP) and returns a unified result.
+        configured models (currently just MuQ-MuLan) and returns a unified result.
 
         Args:
             audio_path: Path to audio file (mp3, wav, flac, etc.)
@@ -137,8 +134,8 @@ class AnalysisEngine:
         Example:
             >>> engine = AnalysisEngine()
             >>> result = engine.analyse_track("resources/example.mp3")
-            >>> print(result.clap_scores['danceability'])
-            85.0
+            >>> print(result.scores['danceability'])
+            0.8500
         """
         import time
 
@@ -148,8 +145,8 @@ class AnalysisEngine:
 
         start_time = time.perf_counter()
 
-        # Run CLAP analysis
-        clap_scores = self.clap_analyser.analyse(
+        # Run MuQ-MuLan analysis
+        scores = self.muq_analyser.analyse(
             audio_path, max_duration_sec=self.max_duration_sec
         )
 
@@ -161,7 +158,7 @@ class AnalysisEngine:
 
         return AnalysisResult(
             audio_path=str(audio_path),
-            clap_scores=clap_scores,
+            scores=scores,
             duration_sec=self.max_duration_sec,
             analysis_time_ms=round(analysis_time_ms, 1),
             metadata={
@@ -174,9 +171,9 @@ class AnalysisEngine:
         """
         Analyze multiple tracks sequentially.
 
-        Note: This is NOT parallel. The CLAP model is not thread-safe,
+        Note: This is NOT parallel. The MuQ-MuLan model is not thread-safe,
         and we process files sequentially to avoid memory issues with
-        the 2GB model.
+        the 1.2GB model.
 
         For parallel processing, create separate AnalysisEngine instances
         in different worker processes.
@@ -199,7 +196,7 @@ class AnalysisEngine:
                 results.append(
                     AnalysisResult(
                         audio_path=str(path),
-                        clap_scores={},
+                        scores={},
                         duration_sec=0.0,
                         metadata={"error": str(e)},
                     )
@@ -220,7 +217,7 @@ def analyse_track(audio_path: str | Path, **kwargs) -> AnalysisResult:
         Convenience function to analyze a single track.
 
         Uses a global AnalysisEngine instance (lazy-initialized) to avoid
-        reloading the 2GB model on every call.
+        reloading the model on every call.
 
         Args:
             audio_path: Path to audio file
@@ -231,7 +228,7 @@ def analyse_track(audio_path: str | Path, **kwargs) -> AnalysisResult:
 
     Example:
                 >>> result = analyse_track("track.mp3")
-                >>> print(result.clap_scores)
+                >>> print(result.scores)
                 {'production_quality': 0.7250, 'danceability': 0.8500, 'temperament': 0.6030}
     """
     global _global_engine

@@ -6,26 +6,27 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "generate-preview": "npx tsx scripts/generate-preview.ts"
   },
   "dependencies": {
-    "next": "14.0.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "next-auth": "^4.24.5",
-    "three": "^0.158.0",
-    "@react-three/fiber": "^8.15.11",
+    "@radix-ui/react-dropdown-menu": "^2.0.6",
+    "@radix-ui/react-slider": "^1.1.2",
     "@react-three/drei": "9.88.0",
-    "framer-motion": "^10.16.16",
-    "lucide-react": "^0.294.0",
+    "@react-three/fiber": "^8.15.11",
+    "@react-three/postprocessing": "^2.15.11",
     "axios": "^1.6.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "framer-motion": "^10.16.16",
+    "lucide-react": "^0.294.0",
+    "next": "14.0.3",
+    "next-auth": "^4.24.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "tailwind-merge": "^2.1.0",
     "tailwindcss-animate": "^1.0.7",
-    "@radix-ui/react-slider": "^1.1.2",
-    "@radix-ui/react-dropdown-menu": "^2.0.6",
-    "@react-three/postprocessing": "^2.15.11"
+    "three": "^0.158.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.4",
@@ -35,8 +36,10 @@
     "autoprefixer": "^10.4.16",
     "eslint": "^8.55.0",
     "eslint-config-next": "14.0.3",
+    "playwright": "^1.58.2",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
+    "tsx": "^4.21.0",
     "typescript": "^5.3.3"
   }
 }

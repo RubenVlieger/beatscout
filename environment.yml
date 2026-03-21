@@ -41,3 +41,7 @@ dependencies:
       - transformers>=4.51.3
       - progressbar2
       - laion-clap
+      - muq
+      - qwen-omni-utils
+      - audioread
+      - openai>=1.52.0

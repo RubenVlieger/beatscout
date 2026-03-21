@@ -1,7 +1,7 @@
 """
 BeatScout Audio Analysis Module
 
-Provides CLAP-based audio scoring for danceability, temperament,
+Provides audio scoring for danceability, temperament,
 and production quality metrics.
 """
 

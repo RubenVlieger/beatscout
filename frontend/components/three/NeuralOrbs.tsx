@@ -9,7 +9,7 @@ import { damp3 } from '@/lib/easing'
 import type { SongData } from './NeuralOrb'
 
 // Shared geometry - created once per app lifecycle
-const orbGeometry = new THREE.SphereGeometry(1, 32, 32)
+const orbGeometry = new THREE.SphereGeometry(1, 16, 16)
 
 // Shared uniforms for vertex shader animations
 const customUniforms = { uTime: { value: 0 } }
@@ -48,8 +48,8 @@ function AnchorRing({
     <mesh ref={meshRef} position={pos}>
       <torusGeometry args={[2.5, 0.05, 16, 100]} />
       <meshStandardMaterial
-        color="#68ED9E"
-        emissive="#68ED9E"
+        color="#39FF14"
+        emissive="#39FF14"
         emissiveIntensity={2}
         transparent
         opacity={0.6}
@@ -88,20 +88,21 @@ const applyInstancingShader = (shader: THREE.Shader) => {
   );
 };
 
-// Quality-tier materials with emissive for glow
+// Quality-tier materials with enhanced emissive contrast
+// High quality glows aggressively, low quality is significantly dimmer
 const qualityMaterials = {
   high: new THREE.MeshStandardMaterial({
     color: 0xffffff,
     emissive: 0xffffff,
-    emissiveIntensity: 1.2,
-    roughness: 0.1,
-    metalness: 0.9,
+    emissiveIntensity: 1.8,
+    roughness: 0.05,
+    metalness: 0.95,
     transparent: true
   }),
   medium: new THREE.MeshStandardMaterial({
     color: 0xffffff,
     emissive: 0xffffff,
-    emissiveIntensity: 0.8,
+    emissiveIntensity: 0.6,
     roughness: 0.3,
     metalness: 0.7,
     transparent: true
@@ -109,10 +110,11 @@ const qualityMaterials = {
   low: new THREE.MeshStandardMaterial({
     color: 0xffffff,
     emissive: 0xffffff,
-    emissiveIntensity: 0.5,
-    roughness: 0.5,
-    metalness: 0.5,
-    transparent: true
+    emissiveIntensity: 0.15,
+    roughness: 0.7,
+    metalness: 0.3,
+    transparent: true,
+    opacity: 0.7
   })
 }
 
@@ -390,6 +392,7 @@ export function NeuralOrbs({
     const tempVector = new THREE.Vector3()
     const tempMatrix = new THREE.Matrix4()
     const tempColor = new THREE.Color()
+    const tempScale = new THREE.Vector3()
     
     let needsUpdate = false
     
@@ -430,16 +433,18 @@ export function NeuralOrbs({
         currentScales.current![globalIdx] = THREE.MathUtils.lerp(currentScale, targetScale, 0.1)
         
         tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z)
-        tempMatrix.scale(new THREE.Vector3(currentScales.current![globalIdx], currentScales.current![globalIdx], currentScales.current![globalIdx]))
+        const scaleVal = currentScales.current![globalIdx]
+        tempScale.set(scaleVal, scaleVal, scaleVal)
+        tempMatrix.scale(tempScale)
         highOrbRef.current!.setMatrixAt(i, tempMatrix)
-        
+
         // Update color with emissive boost
         const emissiveBoost = 1 + (selectedNodeId === node.id ? 0.5 : 0) + (centerNode?.id === node.id ? 0.8 : 0)
         tempColor.copy(node.color).multiplyScalar(emissiveBoost)
         highOrbRef.current!.setColorAt(i, tempColor)
       }
     })
-    
+
     // Update medium quality orbs - only those that need animation
     qualityGroups.medium.forEach((node, i) => {
       const globalIdx = globalIndexMap.get(node.id)!
@@ -475,15 +480,17 @@ export function NeuralOrbs({
         currentScales.current![globalIdx] = THREE.MathUtils.lerp(currentScale, targetScale, 0.1)
         
         tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z)
-        tempMatrix.scale(new THREE.Vector3(currentScales.current![globalIdx], currentScales.current![globalIdx], currentScales.current![globalIdx]))
+        const scaleVal = currentScales.current![globalIdx]
+        tempScale.set(scaleVal, scaleVal, scaleVal)
+        tempMatrix.scale(tempScale)
         mediumOrbRef.current!.setMatrixAt(i, tempMatrix)
-        
+
         const emissiveBoost = 1 + (selectedNodeId === node.id ? 0.5 : 0) + (centerNode?.id === node.id ? 0.8 : 0)
         tempColor.copy(node.color).multiplyScalar(emissiveBoost)
         mediumOrbRef.current!.setColorAt(i, tempColor)
       }
     })
-    
+
     // Update low quality orbs - only those that need animation
     qualityGroups.low.forEach((node, i) => {
       const globalIdx = globalIndexMap.get(node.id)!
@@ -519,9 +526,11 @@ export function NeuralOrbs({
         currentScales.current![globalIdx] = THREE.MathUtils.lerp(currentScale, targetScale, 0.1)
         
         tempMatrix.makeTranslation(tempVector.x, tempVector.y, tempVector.z)
-        tempMatrix.scale(new THREE.Vector3(currentScales.current![globalIdx], currentScales.current![globalIdx], currentScales.current![globalIdx]))
+        const scaleVal = currentScales.current![globalIdx]
+        tempScale.set(scaleVal, scaleVal, scaleVal)
+        tempMatrix.scale(tempScale)
         lowOrbRef.current!.setMatrixAt(i, tempMatrix)
-        
+
         const emissiveBoost = 1 + (selectedNodeId === node.id ? 0.5 : 0) + (centerNode?.id === node.id ? 0.8 : 0)
         tempColor.copy(node.color).multiplyScalar(emissiveBoost)
         lowOrbRef.current!.setColorAt(i, tempColor)
@@ -731,7 +740,7 @@ export function NeuralOrbs({
         return (
           <Html key={node.id} position={pos}>
             <div 
-              className="bg-[#1C2024]/95 backdrop-blur-md border border-[#2D3238] rounded-xl shadow-2xl pointer-events-none"
+              className="bg-[#0A0A0A]/95 backdrop-blur-md border border-[#39FF14] rounded-sm shadow-[0_0_20px_rgba(57,255,20,0.3)] pointer-events-none"
               style={{ 
                 fontSize: '14px',
                 width: '320px',
@@ -742,14 +751,14 @@ export function NeuralOrbs({
                 <div className="font-bold text-white leading-tight" style={{ fontSize: '16px', maxWidth: '260px' }}>
                   {node.data.title}
                 </div>
-                <Play className="w-4 h-4 text-[#68ED9E] flex-shrink-0 ml-2" />
+                <Play className="w-4 h-4 text-[#39FF14] flex-shrink-0 ml-2" />
               </div>
               
               <div className="flex items-end gap-[2px] h-6 mb-4 px-1">
                 {Array.from({ length: 20 }).map((_, i) => (
                   <div
                     key={i}
-                    className="bg-[#68ED9E]/60 rounded-full"
+                    className="bg-[#39FF14]/60 rounded-sm"
                     style={{
                       width: '6px',
                       height: `${Math.random() * 100}%`,
@@ -759,22 +768,22 @@ export function NeuralOrbs({
                 ))}
               </div>
               
-              <div className="space-y-2 text-[#8B949E]" style={{ fontSize: '13px' }}>
+              <div className="space-y-1.5 text-[#8B949E] text-[13px]">
                 <div className="flex justify-between">
-                  <span>Genre:</span>
+                  <span className="uppercase tracking-wide">Genre</span>
                   <span className="text-white">{node.data.genre}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Key:</span>
-                  <span className="text-white">{node.data.key}</span>
+                  <span className="uppercase tracking-wide">Key</span>
+                  <span className="text-white font-mono">{node.data.key}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Tempo:</span>
-                  <span className="text-white">{node.data.tempo} BPM</span>
+                  <span className="uppercase tracking-wide">Tempo</span>
+                  <span className="text-white font-mono">{node.data.tempo} BPM</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Quality:</span>
-                  <span className="text-[#68ED9E]">{node.data.production_quality}/100</span>
+                  <span className="uppercase tracking-wide">Quality</span>
+                  <span className="text-[#39FF14] font-mono">{node.data.production_quality}/100</span>
                 </div>
               </div>
             </div>

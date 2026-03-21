@@ -2,18 +2,100 @@
 
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { CameraControls, Html, Stars } from '@react-three/drei'
+import { CameraControls, Html } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import type { SongData } from './NeuralOrb'
 import { NeuralFilaments } from './NeuralFilaments'
 import { NeuralOrbs } from './NeuralOrbs'
+import { CAMERA_RADIUS, CAMERA_INITIAL_POSITION, CAMERA_BASE_ANGLE, CAMERA_ELEVATION_ANGLE } from './camera-config'
+
+// Deterministic PRNG (Mulberry32)
+function createSeededRandom(seed: number) {
+  return function() {
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+// Deterministic Stars Component
+function DeterministicStars({ count = 5000, radius = 300, depth = 100 }) {
+  const { positions, sizes } = useMemo(() => {
+    const random = createSeededRandom(1337) // Hardcoded seed ensures identical results
+    const posArray = new Float32Array(count * 3)
+    const sizeArray = new Float32Array(count)
+    
+    // Mimic the spherical shell distribution of drei's Stars
+    for (let i = 0; i < count; i++) {
+      const r = radius + (random() * depth)
+      const theta = random() * 2 * Math.PI
+      const phi = Math.acos(2 * random() - 1)
+      
+      posArray[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+      posArray[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+      posArray[i * 3 + 2] = r * Math.cos(phi)
+      
+      // Vary star sizes for pseudo-random brightness (0.5 to 1.5)
+      sizeArray[i] = 0.5 + random() * 1.0
+    }
+    return { positions: posArray, sizes: sizeArray }
+  }, [count, radius, depth])
+
+  return (
+    <points>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[positions, 3]}
+        />
+        <bufferAttribute
+          attach="attributes-size"
+          args={[sizes, 1]}
+        />
+      </bufferGeometry>
+      <pointsMaterial 
+        size={1.0}
+        sizeAttenuation={true}
+        color="#ffffff"
+        transparent
+        opacity={0.35}
+        fog={false}
+        depthWrite={false}
+      />
+    </points>
+  )
+}
 
 // Types
 interface NeuralSceneProps {
   data: SongData[]
   onPointClick: (song: SongData | null) => void
   anchorSongId: string
+  preview?: boolean
+  screenshotMode?: boolean
+  onSceneReady?: () => void
+}
+
+// Component that tracks when the scene is fully rendered and painted
+function SceneReadyTracker({ onReady }: { onReady: () => void }) {
+  const { gl, scene, camera } = useThree()
+
+  useEffect(() => {
+    // 1. Force GPU to compile all shaders and materials immediately
+    gl.compile(scene, camera)
+
+    // 2. Wait for the browser to actually paint the frame to the screen.
+    // We nest requestAnimationFrame twice to ensure the GPU pipeline has flushed.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        onReady()
+      })
+    })
+  }, [gl, scene, camera, onReady])
+
+  return null
 }
 
 interface NodeData {
@@ -40,20 +122,76 @@ function CameraController({
   targetPosition,
   isFocusing,
   orbitMode,
-  centerNode
+  centerNode,
+  preview,
+  screenshotMode
 }: {
   targetPosition: THREE.Vector3 | null
   isFocusing: boolean
   orbitMode: boolean
   centerNode: SongData | null
+  preview: boolean
+  screenshotMode?: boolean
 }) {
   const controlsRef = useRef<CameraControls>(null)
   const { camera } = useThree()
-  const initialPosition = useRef(new THREE.Vector3(60, 60, 60))
-  
+
   // Track if we need to animate camera
   const lastOrbitMode = useRef(orbitMode)
   const lastCenterNode = useRef<SongData | null>(null)
+  const isInitialized = useRef(false)
+  
+  // Animation state for intro rotation
+  const isAnimating = useRef(false)
+  const animationTimeRef = useRef(0)
+  
+  // Start animation after 1 second delay in preview mode
+  useEffect(() => {
+    if (!preview) return
+    const timer = setTimeout(() => {
+      isAnimating.current = true
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [preview])
+
+  // Animation constants - 2x slower for smoother, more elegant rotation
+  const ANIMATION_DURATION = 300000 // ~300 seconds for full 360-degree rotation
+  // Uses shared camera config - change in camera-config.ts to update everywhere
+  const INITIAL_DISTANCE = CAMERA_RADIUS
+
+  // Animation frame handler for continuous circular rotation
+  useFrame((state, delta) => {
+    // Skip animation in screenshot mode - camera stays static
+    if (screenshotMode) return
+
+    // Only animate in preview mode
+    if (!preview || !isAnimating.current) return
+
+    // Use delta time for smooth animation regardless of frame rate
+    animationTimeRef.current += delta * 1000
+    const elapsed = animationTimeRef.current % ANIMATION_DURATION // Seamless loop
+    const progress = elapsed / ANIMATION_DURATION
+
+    // Continuous 360-degree rotation (no zoom, no back-and-forth)
+    const fullAngle = progress * Math.PI * 2 // 0 to 360 degrees
+
+    // Calculate camera position based on spherical coordinates
+    // Start from isometric angle and rotate around Y axis
+    const currentAngle = CAMERA_BASE_ANGLE + fullAngle
+
+    // Constant radius (no zoom in/out)
+    const radius = INITIAL_DISTANCE
+
+    // Calculate position (maintaining isometric-like view while rotating)
+    const x = radius * Math.sin(currentAngle) * Math.cos(CAMERA_ELEVATION_ANGLE)
+    const z = radius * Math.cos(currentAngle) * Math.cos(CAMERA_ELEVATION_ANGLE)
+    const y = radius * Math.sin(CAMERA_ELEVATION_ANGLE)
+
+    // Update camera position directly to avoid setLookAt overhead
+    camera.position.set(x, y, z)
+    camera.lookAt(0, 0, 0)
+    // Note: updateProjectionMatrix() not needed for position updates
+  })
   
   useEffect(() => {
     if (!controlsRef.current) return
@@ -61,6 +199,9 @@ function CameraController({
     // Check if orbit mode or center node changed
     const orbitChanged = lastOrbitMode.current !== orbitMode
     const centerChanged = lastCenterNode.current?.id !== centerNode?.id
+    
+    // Note: Animation continues running for screen recording purposes
+    // User interactions will temporarily override, but animation resumes when reset
     
     if (orbitMode && centerNode && (orbitChanged || centerChanged)) {
       // Entering orbit mode or switching center - animate to top-down view
@@ -77,13 +218,12 @@ function CameraController({
         lookAt.x, lookAt.y, lookAt.z,
         true // enable transition
       )
+      // Pause animation while in orbit mode
+      isAnimating.current = false
     } else if (!orbitMode && orbitChanged) {
-      // Exiting orbit mode - return to default isometric view
-      controlsRef.current.setLookAt(
-        initialPosition.current.x, initialPosition.current.y, initialPosition.current.z,
-        0, 0, 0,
-        true // enable transition
-      )
+      // Exiting orbit mode - animation will automatically resume on next frame
+      isAnimating.current = true
+      animationTimeRef.current = 0
     } else if (targetPosition && isFocusing && !orbitMode) {
       // Normal focus mode (single click)
       const offset = new THREE.Vector3(20, 15, 20)
@@ -94,12 +234,42 @@ function CameraController({
         targetPosition.x, targetPosition.y, targetPosition.z,
         true // enable transition
       )
+      // Pause animation while focusing
+      isAnimating.current = false
     }
     
     lastOrbitMode.current = orbitMode
     lastCenterNode.current = centerNode
   }, [targetPosition, isFocusing, orbitMode, centerNode])
-  
+
+  // Initialize camera position on mount - runs for ALL modes to ensure consistency
+  useEffect(() => {
+    if (isInitialized.current) return
+    isInitialized.current = true
+
+    // Position camera at the exact starting frame of the animation
+    // Uses shared CAMERA_INITIAL_POSITION from camera-config.ts
+    const [x, y, z] = CAMERA_INITIAL_POSITION
+
+    // Set camera position and look at origin immediately
+    camera.position.set(x, y, z)
+    camera.lookAt(0, 0, 0)
+    camera.updateProjectionMatrix()
+
+    // Also update CameraControls to match, preventing any transition animation
+    if (controlsRef.current) {
+      controlsRef.current.setLookAt(x, y, z, 0, 0, 0, false)
+    }
+
+    if (screenshotMode) {
+      console.log('Screenshot mode: Camera positioned at frame 0', { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) })
+    }
+  }, [screenshotMode, camera])
+
+  // In preview mode, disable smooth transitions to prevent CameraControls
+  // from animating away from our scripted animation position
+  const isPreviewMode = preview || screenshotMode
+
   return (
     <CameraControls
       ref={controlsRef}
@@ -107,7 +277,7 @@ function CameraController({
       minDistance={10}
       maxDistance={160}
       restThreshold={0.01}
-      smoothTime={0.5}
+      smoothTime={isPreviewMode ? 0 : 0.5}
       draggingSmoothTime={0.1}
     />
   )
@@ -117,7 +287,10 @@ function CameraController({
 function NeuralWeb({
   data,
   onPointClick,
-  anchorSongId
+  anchorSongId,
+  preview,
+  screenshotMode,
+  onSceneReady
 }: NeuralSceneProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -326,16 +499,8 @@ function NeuralWeb({
       {/* Fog for depth */}
       <fog attach="fog" args={['#141619', 30, 150]} />
       
-      {/* Background stars for atmosphere */}
-      <Stars 
-        radius={200} 
-        depth={50} 
-        count={1000} 
-        factor={4} 
-        saturation={0} 
-        fade 
-        speed={0.5}
-      />
+      {/* Deterministic Background stars for seamless crossfade */}
+      <DeterministicStars radius={300} depth={100} count={5000} />
       
       {/* Neural filaments (connections) */}
       <NeuralFilaments
@@ -366,22 +531,27 @@ function NeuralWeb({
       />
       
       {/* Camera controller */}
-      <CameraController 
-        targetPosition={targetPosition} 
+      <CameraController
+        targetPosition={targetPosition}
         isFocusing={isTransitioning}
         orbitMode={orbitMode}
         centerNode={centerNode}
+        preview={!!preview}
+        screenshotMode={!!screenshotMode}
       />
       
       {/* Bloom post-processing */}
-      <EffectComposer>
+      <EffectComposer enableNormalPass={false}>
         <Bloom
-          luminanceThreshold={0.1}
+          luminanceThreshold={0.2}
           luminanceSmoothing={0.9}
-          height={300}
           intensity={7.0}
+          mipmapBlur={true}
         />
       </EffectComposer>
+
+      {/* Scene ready tracker - triggers callback when scene is fully rendered */}
+      {onSceneReady && <SceneReadyTracker onReady={onSceneReady} />}
     </>
   )
 }
@@ -390,13 +560,19 @@ function NeuralWeb({
 export function NeuralScene({
   data,
   onPointClick,
-  anchorSongId
+  anchorSongId,
+  preview,
+  screenshotMode,
+  onSceneReady
 }: NeuralSceneProps) {
   return (
     <NeuralWeb
       data={data}
       onPointClick={onPointClick}
       anchorSongId={anchorSongId}
+      preview={preview}
+      screenshotMode={screenshotMode}
+      onSceneReady={onSceneReady}
     />
   )
 }

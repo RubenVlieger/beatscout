@@ -61,13 +61,128 @@ Raw audio is processed **in memory and never written to disk**, keeping storage 
 
 **Essentia.js** (TensorFlow-based) is used for model-agnostic ground truth feature extraction (BPM, Camelot Key, etc.).
 
-### D. Database & Caching — The Flywheel Effect
+### D. Camera Configuration
+
+The landing page uses a **shared camera configuration** (`frontend/components/three/camera-config.ts`) to ensure the static screenshot and live 3D animation start from exactly the same position:
+
+```typescript
+// Camera position is calculated from spherical coordinates:
+// x = radius * sin(45°) * cos(30°)
+// y = radius * sin(30°)
+// z = radius * cos(45°) * cos(30°)
+// where radius = sqrt(70² + 70² + 70²)
+
+export const CAMERA_INITIAL_POSITION: [number, number, number] = [
+  74.25,  // x
+  60.62,  // y
+  74.25   // z
+]
+```
+
+This shared constant is used by:
+- `page.tsx` - Canvas initial camera position
+- `NeuralScene.tsx` - Animation frame-0 position and screenshot mode
+- `explorer/page.tsx` - Explorer Canvas camera
+
+**To change the starting camera position:** Edit `camera-config.ts` and all components will automatically use the new position.
+
+### E. Database & Caching — The Flywheel Effect
 
 Once a track is analyzed, its parameters are permanently cached. Over time, BeatScout accumulates a proprietary database of track vibes that grows more valuable with every search — dramatically reducing per-query compute costs and improving response times.
 
 ---
 
-## 5. Monetization & Infrastructure
+## 5. Preview Mode & Camera Animation (For Screen Recording)
+
+The 3D Neural Web visualization supports a special **Preview Mode** designed for screen recording and landing page use. When enabled, the explorer displays a seamless, looping camera animation with all UI elements hidden.
+
+### A. How It Works
+
+**Environment Variable Toggle:**
+```bash
+# In frontend/.env.local
+NEXT_PUBLIC_PREVIEW_MODE=true   # Enables animation + hides UI
+NEXT_PUBLIC_PREVIEW_MODE=false  # Normal interactive explorer (default)
+```
+
+**Camera Animation Behavior:**
+- **Duration**: ~25 seconds for a full loop (50% slower than original for smooth recordings)
+- **Rotation**: Smooth 0° → 90° → 0° rotation around the scene using sine wave interpolation
+- **Zoom Sequence**: 
+  - First 5 seconds: Zoom in 10% (from full view to closer view)
+  - Middle 15 seconds: Hold zoomed-in position
+  - Last 5 seconds: Zoom back out to original position
+  - Result: Seamless loop when animation repeats
+- **Camera Position**: Starts at [70, 70, 70] with isometric angle, rotates around Y-axis
+- **Static Stars**: Background stars are completely static (speed=0, no fade) to prevent flickering during recording
+
+**Component Props:**
+```tsx
+// NeuralScene accepts a preview prop
+<NeuralScene 
+  data={songs} 
+  onPointClick={handler}
+  anchorSongId={anchorId}
+  preview={true}  // Enables camera animation
+/>
+```
+
+### B. Two Render Modes
+
+**Preview Mode (PREVIEW=true):**
+- Full-screen 3D canvas only (no sidebar, filters, or table)
+- Camera auto-rotates and zooms in seamless loop
+- Perfect for screen recordings and landing page backgrounds
+- All interactive features disabled (click handlers are no-ops)
+
+**Normal Mode (PREVIEW=false):**
+- Full UI with sidebar, filters panel, and results table
+- Interactive camera controls (hover to focus, click to orbit)
+- Manual exploration with mouse/touch controls
+- All features fully functional
+
+### C. Landing Page Static Image
+
+The landing page displays a static screenshot (`public/landing-bg.png`) while the 3D Neural Web loads. This provides a seamless visual experience:
+
+1. User sees static image immediately (no loading wait)
+2. 3D animation fades in smoothly once loaded
+3. Camera positions are synchronized for perfect transition
+
+**Generating the Screenshot:**
+
+When you change the camera position, scene, or want to update the landing page image, regenerate the screenshot locally:
+
+```bash
+cd frontend
+npm run generate-preview
+```
+
+This command:
+- Starts a local Next.js dev server
+- Opens Playwright to capture a 1920x1080 screenshot
+- Saves it to `public/landing-bg.png`
+- Commits the new image to the repo
+
+**Note**: Do not delete or move `public/landing-bg.png`. The landing page relies on this file for the initial static background.
+
+### D. Rebuilding After Toggle
+
+When changing the preview mode, you must rebuild the frontend:
+
+```bash
+# For development (with hot reload)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build frontend
+
+# For production
+docker compose up --build -d
+```
+
+**Note**: Next.js bundles environment variables at build time, so changing `.env.local` requires a rebuild to take effect.
+
+---
+
+## 6. Monetization & Infrastructure
 
 **Freemium / Tiered Model** — Free users join a standard processing queue. Pro users receive prioritized access to high-speed compute resources.
 

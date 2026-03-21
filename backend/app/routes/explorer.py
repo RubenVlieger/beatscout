@@ -106,8 +106,8 @@ async def get_example_data():
         filename = song.get("filename", "")
         title = filename.replace(".mp3", "").replace(".wav", "").strip()
 
-        # Generate random tempo between 120-145
-        tempo = random.randint(120, 145)
+        # Use tempo from JSON data (already generated deterministically)
+        tempo = song.get("tempo", 130)
 
         # Random genre and key
         genre = random.choice(GENRES)

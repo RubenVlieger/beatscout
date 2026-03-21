@@ -118,12 +118,23 @@ export function NeuralOrb({
   }, [data.production_quality])
   
   // Emissive intensity based on production quality and selection state
+  // Enhanced contrast: high quality glows brighter, low quality is dimmer
   const emissiveIntensity = useMemo(() => {
-    const baseIntensity = 0.3
-    const qualityBoost = (data.production_quality / 100) * 1.2
-    const selectionBoost = isSelected ? 0.5 : 0
-    const centerBoost = isCenter ? 0.8 : 0
-    return baseIntensity + qualityBoost + selectionBoost + centerBoost
+    const q = data.production_quality
+    let baseIntensity = 0.15
+    
+    // Exponential boost for high quality to make them pop
+    if (q >= 70) {
+      baseIntensity = 0.4 + Math.pow((q - 70) / 30, 1.5) * 1.5
+    } else if (q >= 40) {
+      baseIntensity = 0.2 + ((q - 40) / 30) * 0.2
+    } else {
+      baseIntensity = 0.05 + (q / 40) * 0.15
+    }
+    
+    const selectionBoost = isSelected ? 0.8 : 0
+    const centerBoost = isCenter ? 1.0 : 0
+    return baseIntensity + selectionBoost + centerBoost
   }, [data.production_quality, isSelected, isCenter])
   
   // Calculate target scale based on state
@@ -244,7 +255,7 @@ export function NeuralOrb({
       
       {/* Main Orb - visual only, no interaction handlers */}
       <mesh ref={meshRef}>
-        <sphereGeometry args={[1, 32, 32]} />
+        <sphereGeometry args={[1, 16, 16]} />
         <meshPhysicalMaterial
           color={color}
           emissive={color}
@@ -266,8 +277,8 @@ export function NeuralOrb({
         <mesh ref={ringRef}>
           <torusGeometry args={[2.5, 0.05, 16, 100]} />
           <meshStandardMaterial
-            color="#68ED9E"
-            emissive="#68ED9E"
+            color="#39FF14"
+            emissive="#39FF14"
             emissiveIntensity={2}
             transparent
             opacity={0.6}
@@ -289,29 +300,29 @@ export function NeuralOrb({
         </mesh>
       )}
       
-      {/* Tooltip */}
+      {/* Tooltip - Technical HUD Style */}
       {(actuallyHovered || isHovered) && !shouldHide && (
         <Html distanceFactor={20}>
           <div 
-            className="bg-[#1C2024]/95 backdrop-blur-md border border-[#2D3238] px-8 py-6 rounded-xl shadow-2xl pointer-events-none min-w-[600px]"
-            style={{ fontSize: '32px' }}
+            className="bg-[#0A0A0A]/95 backdrop-blur-md border border-[#39FF14] px-4 py-3 rounded-sm shadow-[0_0_20px_rgba(57,255,20,0.3)] pointer-events-none min-w-[320px]"
+            style={{ fontSize: '14px' }}
           >
             {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="font-bold text-white" style={{ fontSize: '40px' }}>
+            <div className="flex items-start justify-between mb-3">
+              <div className="font-bold text-white leading-tight" style={{ fontSize: '16px', maxWidth: '260px' }}>
                 {data.title}
               </div>
-              <Play className="w-8 h-8 text-[#68ED9E]" />
+              <Play className="w-4 h-4 text-[#39FF14] flex-shrink-0 ml-2" />
             </div>
             
             {/* Waveform visualization */}
-            <div className="flex items-end gap-[4px] h-10 mb-6 px-2">
+            <div className="flex items-end gap-[2px] h-6 mb-4 px-1">
               {Array.from({ length: 20 }).map((_, i) => (
                 <div
                   key={i}
-                  className="bg-[#68ED9E]/60 rounded-full"
+                  className="bg-[#39FF14]/60 rounded-sm"
                   style={{
-                    width: '10px',
+                    width: '6px',
                     height: `${Math.random() * 100}%`,
                     animation: `pulse 0.5s ease-in-out ${i * 0.05}s infinite alternate`
                   }}
@@ -319,23 +330,23 @@ export function NeuralOrb({
               ))}
             </div>
             
-            {/* Metadata */}
-            <div className="space-y-3 text-[#8B949E]" style={{ fontSize: '28px' }}>
+            {/* Metadata - Technical HUD */}
+            <div className="space-y-1.5 text-[#8B949E] text-[13px]">
               <div className="flex justify-between">
-                <span>Genre:</span>
+                <span className="uppercase tracking-wide">Genre</span>
                 <span className="text-white">{data.genre}</span>
               </div>
               <div className="flex justify-between">
-                <span>Key:</span>
-                <span className="text-white">{data.key}</span>
+                <span className="uppercase tracking-wide">Key</span>
+                <span className="text-white font-mono">{data.key}</span>
               </div>
               <div className="flex justify-between">
-                <span>Tempo:</span>
-                <span className="text-white">{data.tempo} BPM</span>
+                <span className="uppercase tracking-wide">Tempo</span>
+                <span className="text-white font-mono">{data.tempo} BPM</span>
               </div>
               <div className="flex justify-between">
-                <span>Quality:</span>
-                <span className="text-[#68ED9E]">{data.production_quality}/100</span>
+                <span className="uppercase tracking-wide">Quality</span>
+                <span className="text-[#39FF14] font-mono">{data.production_quality}/100</span>
               </div>
             </div>
           </div>

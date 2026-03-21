@@ -16,6 +16,10 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-jetbrains-mono)', 'ui-monospace', 'monospace'],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -50,13 +54,13 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        // BeatScout specific colors
+        // BeatScout specific colors - Pro Audio Hardware Aesthetic
         beatscout: {
-          bg: '#141619',
-          panel: '#1C2024',
-          border: '#2D3238',
-          mint: '#68ED9E',
-          'mint-dark': '#5ad88d',
+          bg: '#050505',
+          panel: '#0A0A0A',
+          border: '#222222',
+          mint: '#39FF14',
+          'mint-dark': '#2dd40f',
           blue: '#1E3A8A',
           yellow: '#FACC15',
           text: '#E0E0E0',
@@ -82,8 +86,8 @@ module.exports = {
           '100%': { opacity: 1, transform: 'translateY(0)' },
         },
         'pulse-glow': {
-          '0%, 100%': { boxShadow: '0 0 20px rgba(104, 237, 158, 0.3)' },
-          '50%': { boxShadow: '0 0 40px rgba(104, 237, 158, 0.5)' },
+          '0%, 100%': { boxShadow: '0 0 20px rgba(57, 255, 20, 0.3)' },
+          '50%': { boxShadow: '0 0 40px rgba(57, 255, 20, 0.5)' },
         },
       },
       animation: {
