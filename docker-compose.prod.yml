@@ -4,9 +4,9 @@ services:
   backend:
     image: ghcr.io/rubenvlieger/beatscout-backend:latest
     container_name: beatscout-backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers 1
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
-      - "8002:8002"
+      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://rubenvlieger:rubenvlieger1234catlightcalculatorbackflip@db:5432/beatscout
       - JWT_SECRET_KEY=rubenvlieger1234catlightcalculatorbackflip # Warning: Move this to a .env file later!
@@ -46,6 +46,7 @@ services:
 
 volumes:
   postgres_data:
+
 
 networks:
   beatscout-network:
