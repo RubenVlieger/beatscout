@@ -14,7 +14,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "https://beatcout.io"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "https://beatscout.rubenvlieger.nl",
+    ]
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://user:password@db:5432/beatcout"

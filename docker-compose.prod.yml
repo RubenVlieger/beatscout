@@ -25,7 +25,7 @@ services:
     image: ghcr.io/rubenvlieger/beatscout-frontend:latest
     container_name: beatscout-frontend
     environment:
-      - NEXT_PUBLIC_API_URL=https://beatscout.rubenvlieger.nl/api # Tells your UI where the backend is
+      - NEXT_PUBLIC_API_URL=https://beatscout.rubenvlieger.nl # Tells your UI where the backend is
     networks:
       - web-proxy
     restart: always

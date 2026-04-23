@@ -10,16 +10,8 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/backend/:path*',
+        source: '/api/:path*',
         destination: 'http://backend:8000/api/:path*',
-      },
-      {
-        source: '/api/auth/:path*',
-        destination: 'http://backend:8000/api/auth/:path*',
-      },
-      {
-        source: '/api/waitlist/:path*',
-        destination: 'http://backend:8000/api/waitlist/:path*',
       },
     ]
   },

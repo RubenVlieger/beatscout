@@ -35,9 +35,6 @@ const navItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Request New Track', href: '/request', icon: PlusCircle },
   { name: 'My Crate', href: '/crate', icon: Library },
-  { name: 'Recommended', href: '/recommended', icon: Star },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { name: 'Settings', href: '/settings', icon: Settings },
 ]
 
 export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: SidebarProps) {
@@ -199,8 +196,8 @@ export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: Sidebar
           </div>
           
           {!user.soundcloud_connected && (
-            <Link
-              href="/settings"
+            <button
+              onClick={() => authApi.loginWithSoundCloud()}
               className="flex items-center justify-center w-8 h-8 text-beatscout-mint hover:text-beatscout-mint-dark transition-colors rounded-sm hover:bg-beatscout-border group relative mx-auto"
               title="Link SoundCloud"
             >
@@ -211,7 +208,7 @@ export default function Sidebar({ isLoggedIn: initialLoggedIn = false }: Sidebar
               <span className="absolute left-full ml-3 px-2 py-1 bg-beatscout-bg border border-beatscout-border text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 rounded-sm">
                 Link SoundCloud
               </span>
-            </Link>
+            </button>
           )}
         </div>
       ) : (
